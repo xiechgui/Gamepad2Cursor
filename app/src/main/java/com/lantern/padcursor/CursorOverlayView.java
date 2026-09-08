@@ -5,6 +5,7 @@ import android.content.SharedPreferences;
 import android.graphics.Canvas;
 import android.graphics.Paint;
 import android.view.InputDevice;
+import android.view.KeyEvent;
 import android.view.MotionEvent;
 import android.view.View;
 
@@ -130,6 +131,15 @@ public class CursorOverlayView extends View {
             return true;
         }
         return true;
+    }
+
+    @Override
+    public boolean dispatchKeyEvent(KeyEvent event) {
+        // Several Android TV firmwares deliver non-confirm gamepad buttons
+        // directly to the focused accessibility overlay instead of calling
+        // AccessibilityService.onKeyEvent(). Route both paths to one mapper.
+        if (service.onOverlayKeyEvent(event)) return true;
+        return super.dispatchKeyEvent(event);
     }
 
     private float readRightStickY(MotionEvent event, int source) {

@@ -69,7 +69,7 @@ public class MainActivity extends Activity {
                 ScrollView.LayoutParams.MATCH_PARENT,
                 ScrollView.LayoutParams.WRAP_CONTENT));
 
-        TextView title = text("PadCursor TV v0.3.1", 30, true);
+        TextView title = text("PadCursor TV v0.3.2", 30, true);
         root.addView(title);
 
         statusView = text("", 20, true);

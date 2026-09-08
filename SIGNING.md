@@ -44,7 +44,7 @@ base64 < padcursor-release.jks | tr -d '\n'
 运行 **Actions → Build PadCursorTV APK → Run workflow**。产物为：
 
 ```text
-PadCursorTV-Android9-v0.3.1-release.apk
+PadCursorTV-Android9-v0.3.2-release.apk
 ```
 
 首次使用这套固定签名安装后，后续版本必须继续使用完全相同的 JKS、别名和密码。建议至少保留两份离线备份。

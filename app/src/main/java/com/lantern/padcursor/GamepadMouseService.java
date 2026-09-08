@@ -52,6 +52,15 @@ public class GamepadMouseService extends AccessibilityService {
     @Override public void onInterrupt() {}
 
     @Override protected boolean onKeyEvent(KeyEvent event) {
+        return handleControllerKey(event, false);
+    }
+
+    public boolean onOverlayKeyEvent(KeyEvent event) {
+        if (!mouseMode || overlay == null) return false;
+        return handleControllerKey(event, true);
+    }
+
+    private boolean handleControllerKey(KeyEvent event, boolean fromFocusedOverlay) {
         int code = event.getKeyCode();
 
         // Some Android TV firmwares report part of a controller as SOURCE_KEYBOARD.
@@ -72,7 +81,8 @@ public class GamepadMouseService extends AccessibilityService {
 
         // Accept configured/known controller key codes even when JUUI labels
         // their source as a keyboard. Leave unrelated remote/keyboard keys alone.
-        if (!gamepadSource && mappedAction < 0 && !comboKey && !legacyKey) return false;
+        if (!fromFocusedOverlay && !gamepadSource
+                && mappedAction < 0 && !comboKey && !legacyKey) return false;
 
         if (event.getAction() == KeyEvent.ACTION_DOWN) downKeys.add(code);
         else if (event.getAction() == KeyEvent.ACTION_UP) downKeys.remove(code);
