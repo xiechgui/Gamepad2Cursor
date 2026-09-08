@@ -12,7 +12,6 @@ jobs:
   build:
     runs-on: ubuntu-latest
     timeout-minutes: 15
-
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -27,28 +26,66 @@ jobs:
         uses: android-actions/setup-android@v3
 
       - name: Install Android SDK packages
-        run: yes | sdkmanager --licenses >/dev/null || true
+        run: |
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager "platform-tools" "platforms;android-34" "build-tools;34.0.0"
 
       - name: Set up Gradle 8.7
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.7'
 
-      - name: Build debug APK
-        run: gradle --no-daemon clean assembleDebug
+      - name: Check fixed-signing secrets
+        shell: bash
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          missing=0
+          for name in ANDROID_KEYSTORE_BASE64 ANDROID_KEYSTORE_PASSWORD ANDROID_KEY_ALIAS ANDROID_KEY_PASSWORD; do
+            if [ -z "${!name}" ]; then
+              echo "::error::$name is not configured in GitHub Actions secrets"
+              missing=1
+            fi
+          done
+          exit "$missing"
+
+      - name: Restore signing keystore
+        shell: bash
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PATH: ${{ runner.temp }}/padcursor-release.jks
+        run: printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$ANDROID_KEYSTORE_PATH"
+
+      - name: Build fixed-signed release APK
+        env:
+          ANDROID_KEYSTORE_PATH: ${{ runner.temp }}/padcursor-release.jks
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: gradle --no-daemon clean assembleRelease
 
       - name: Verify APK exists
         run: |
-          test -f app/build/outputs/apk/debug/app-debug.apk
-          ls -lh app/build/outputs/apk/debug/app-debug.apk
+          test -f app/build/outputs/apk/release/app-release.apk
+          "$ANDROID_HOME/build-tools/34.0.0/apksigner" verify --verbose --print-certs app/build/outputs/apk/release/app-release.apk
 
       - name: Rename APK
-        run: cp app/build/outputs/apk/debug/app-debug.apk PadCursorTV-Android9-debug.apk
+        run: cp app/build/outputs/apk/release/app-release.apk PadCursorTV-Android9-v0.3.0-release.apk
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: PadCursorTV-Android9-APK
-          path: PadCursorTV-Android9-debug.apk
+          name: PadCursorTV-Android9-v0.3.0-APK
+          path: PadCursorTV-Android9-v0.3.0-release.apk
           if-no-files-found: error
           retention-days: 30
+
+      - name: Remove temporary keystore
+        if: always()
+        shell: bash
+        env:
+          ANDROID_KEYSTORE_PATH: ${{ runner.temp }}/padcursor-release.jks
+        run: rm -f "$ANDROID_KEYSTORE_PATH"

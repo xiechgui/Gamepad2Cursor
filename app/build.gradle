@@ -2,6 +2,17 @@ plugins {
     id 'com.android.application'
 }
 
+def fixedKeystorePath = System.getenv('ANDROID_KEYSTORE_PATH')
+def fixedKeystorePassword = System.getenv('ANDROID_KEYSTORE_PASSWORD')
+def fixedKeyAlias = System.getenv('ANDROID_KEY_ALIAS')
+def fixedKeyPassword = System.getenv('ANDROID_KEY_PASSWORD')
+def fixedSigningAvailable = [
+        fixedKeystorePath,
+        fixedKeystorePassword,
+        fixedKeyAlias,
+        fixedKeyPassword
+].every { value -> value != null && !value.isEmpty() }
+
 android {
     namespace 'com.lantern.padcursor'
     compileSdk 34
@@ -10,14 +21,28 @@ android {
         applicationId "com.lantern.padcursor"
         minSdk 28
         targetSdk 28
-        versionCode 1
-        versionName "0.1.0"
+        versionCode 3
+        versionName "0.3.0"
+    }
+
+    signingConfigs {
+        if (fixedSigningAvailable) {
+            fixedRelease {
+                storeFile file(fixedKeystorePath)
+                storePassword fixedKeystorePassword
+                keyAlias fixedKeyAlias
+                keyPassword fixedKeyPassword
+            }
+        }
     }
 
     buildTypes {
         release {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+            if (fixedSigningAvailable) {
+                signingConfig signingConfigs.fixedRelease
+            }
         }
     }
 

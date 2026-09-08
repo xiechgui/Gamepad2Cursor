@@ -19,6 +19,7 @@ public class CursorOverlayView extends View {
     private float cursorY;
     private float axisX;
     private float axisY;
+    private float scrollAxisY;
     private float maxSpeedPxPerSecond;
     private float deadzone;
     private float radiusPx;
@@ -43,6 +44,7 @@ public class CursorOverlayView extends View {
                 clampCursor();
                 invalidate();
             }
+            service.onRightStickScroll(useRightStick ? 0f : scrollAxisY);
             postOnAnimation(this);
         }
     };
@@ -107,6 +109,7 @@ public class CursorOverlayView extends View {
         }
 
         if (event.getAction() == MotionEvent.ACTION_MOVE) {
+            scrollAxisY = readRightStickY(event, source);
             if (useRightStick) {
                 InputDevice device = event.getDevice();
                 boolean hasRxRy = device != null
@@ -127,6 +130,19 @@ public class CursorOverlayView extends View {
             return true;
         }
         return true;
+    }
+
+    private float readRightStickY(MotionEvent event, int source) {
+        InputDevice device = event.getDevice();
+        float rz = 0f;
+        float ry = 0f;
+        if (device == null || device.getMotionRange(MotionEvent.AXIS_RZ, source) != null) {
+            rz = event.getAxisValue(MotionEvent.AXIS_RZ);
+        }
+        if (device == null || device.getMotionRange(MotionEvent.AXIS_RY, source) != null) {
+            ry = event.getAxisValue(MotionEvent.AXIS_RY);
+        }
+        return Math.abs(rz) >= Math.abs(ry) ? rz : ry;
     }
 
     private float curve(float value) {

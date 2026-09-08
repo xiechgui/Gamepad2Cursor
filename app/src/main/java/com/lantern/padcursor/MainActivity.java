@@ -7,9 +7,11 @@ import android.content.Intent;
 import android.content.SharedPreferences;
 import android.graphics.Color;
 import android.os.Bundle;
+import android.os.SystemClock;
 import android.provider.Settings;
 import android.text.TextUtils;
 import android.view.Gravity;
+import android.view.KeyEvent;
 import android.view.View;
 import android.widget.Button;
 import android.widget.CheckBox;
@@ -20,7 +22,10 @@ import android.widget.TextView;
 import android.widget.Toast;
 
 public class MainActivity extends Activity {
-    private static final String PREFS = "padcursor";
+    private static volatile MainActivity instance;
+    private static volatile int captureAction = -1;
+    private static volatile int captureCombo;
+    private static volatile long captureReadyAt;
 
     private SharedPreferences prefs;
     private TextView statusView;
@@ -31,11 +36,18 @@ public class MainActivity extends Activity {
     private SeekBar deadzoneSeek;
     private SeekBar sizeSeek;
     private CheckBox rightStickCheck;
+    private SeekBar scrollDeadzoneSeek;
+    private SeekBar scrollSensitivitySeek;
+    private SeekBar scrollSpeedSeek;
+    private TextView scrollDeadzoneLabel;
+    private TextView scrollSensitivityLabel;
+    private TextView scrollSpeedLabel;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        prefs = getSharedPreferences(PREFS, MODE_PRIVATE);
+        instance = this;
+        prefs = Prefs.get(this);
         setContentView(buildUi());
     }
 
@@ -57,7 +69,7 @@ public class MainActivity extends Activity {
                 ScrollView.LayoutParams.MATCH_PARENT,
                 ScrollView.LayoutParams.WRAP_CONTENT));
 
-        TextView title = text("PadCursor TV", 30, true);
+        TextView title = text("PadCursor TV v0.3.0", 30, true);
         root.addView(title);
 
         statusView = text("", 20, true);
@@ -72,6 +84,7 @@ public class MainActivity extends Activity {
                 "• B：返回    Y：主页\n" +
                 "• LB / RB：向上 / 向下滚动\n" +
                 "• L3 / R3：光标回到屏幕中心\n" +
+                "• 右摇杆 Y 轴：连续滚动\n" +
                 "• START + SELECT：鼠标模式 ↔ 手柄直通模式\n\n" +
                 "进入 Moonlight 前按 START+SELECT 切到“手柄直通”，游戏即可直接收到手柄。",
                 18, false);
@@ -140,6 +153,36 @@ public class MainActivity extends Activity {
         root.addView(sizeLabel);
         root.addView(sizeSeek);
 
+        TextView scrollHeading = text("右摇杆连续滚动", 22, true);
+        scrollHeading.setPadding(0, dp(22), 0, dp(8));
+        root.addView(scrollHeading);
+
+        scrollDeadzoneSeek = new SeekBar(this);
+        scrollDeadzoneSeek.setMax(55);
+        scrollDeadzoneSeek.setProgress(Math.max(5, prefs.getInt("scroll_deadzone", 22)) - 5);
+        scrollDeadzoneLabel = text("", 18, false);
+        root.addView(scrollDeadzoneLabel);
+        root.addView(scrollDeadzoneSeek);
+
+        scrollSensitivitySeek = new SeekBar(this);
+        scrollSensitivitySeek.setMax(150);
+        scrollSensitivitySeek.setProgress(Math.max(50, prefs.getInt("scroll_sensitivity", 100)) - 50);
+        scrollSensitivityLabel = text("", 18, false);
+        root.addView(scrollSensitivityLabel);
+        root.addView(scrollSensitivitySeek);
+
+        scrollSpeedSeek = new SeekBar(this);
+        scrollSpeedSeek.setMax(2200);
+        scrollSpeedSeek.setProgress(Math.max(200, prefs.getInt("scroll_speed", 900)) - 200);
+        scrollSpeedLabel = text("", 18, false);
+        root.addView(scrollSpeedLabel);
+        root.addView(scrollSpeedSeek);
+
+        TextView scrollNote = text(
+                "支持常见的 RZ / RY 轴。若勾选“使用右摇杆控制光标”，为避免冲突，右摇杆滚动会自动暂停。",
+                16, false);
+        root.addView(scrollNote);
+
         SeekBar.OnSeekBarChangeListener labels = new SeekBar.OnSeekBarChangeListener() {
             @Override public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) { updateLabels(); }
             @Override public void onStartTrackingTouch(SeekBar seekBar) { }
@@ -148,6 +191,9 @@ public class MainActivity extends Activity {
         speedSeek.setOnSeekBarChangeListener(labels);
         deadzoneSeek.setOnSeekBarChangeListener(labels);
         sizeSeek.setOnSeekBarChangeListener(labels);
+        scrollDeadzoneSeek.setOnSeekBarChangeListener(labels);
+        scrollSensitivitySeek.setOnSeekBarChangeListener(labels);
+        scrollSpeedSeek.setOnSeekBarChangeListener(labels);
         updateLabels();
 
         Button save = button("保存并立即应用");
@@ -155,17 +201,44 @@ public class MainActivity extends Activity {
             int speed = Math.max(200, speedSeek.getProgress());
             int deadzone = Math.max(5, deadzoneSeek.getProgress());
             int cursorSize = Math.max(8, sizeSeek.getProgress());
+            int scrollDeadzone = scrollDeadzoneSeek.getProgress() + 5;
+            int scrollSensitivity = scrollSensitivitySeek.getProgress() + 50;
+            int scrollSpeed = scrollSpeedSeek.getProgress() + 200;
             prefs.edit()
                     .putInt("speed", speed)
                     .putInt("deadzone", deadzone)
                     .putInt("cursor_size", cursorSize)
                     .putBoolean("right_stick", rightStickCheck.isChecked())
+                    .putInt("scroll_deadzone", scrollDeadzone)
+                    .putInt("scroll_sensitivity", scrollSensitivity)
+                    .putInt("scroll_speed", scrollSpeed)
                     .apply();
             GamepadMouseService s = GamepadMouseService.getInstance();
             if (s != null) s.applySettings();
             Toast.makeText(this, "设置已应用", Toast.LENGTH_SHORT).show();
         });
         root.addView(save, lp());
+
+        TextView mappingHeading = text("自定义按键映射", 22, true);
+        mappingHeading.setPadding(0, dp(22), 0, dp(8));
+        root.addView(mappingHeading);
+        for (int i = 0; i < Prefs.ACTION_IDS.length; i++) addMappingRow(root, i);
+
+        TextView comboHeading = text("模式切换组合键", 22, true);
+        comboHeading.setPadding(0, dp(20), 0, dp(8));
+        root.addView(comboHeading);
+        addComboRow(root, 1, "组合键 1", Prefs.comboFirst(this));
+        addComboRow(root, 2, "组合键 2", Prefs.comboSecond(this));
+        TextView comboNote = text("两个组合键全部释放后才切换模式，避免 Moonlight 出现按键卡住。", 16, false);
+        root.addView(comboNote);
+
+        Button resetMappings = button("恢复默认按键映射");
+        resetMappings.setOnClickListener(v -> {
+            Prefs.resetMappings(this);
+            Toast.makeText(this, "已恢复默认按键映射", Toast.LENGTH_SHORT).show();
+            setContentView(buildUi());
+        });
+        root.addView(resetMappings, lp());
 
         TextView note = text(
                 "兼容性说明：该版本专门以 Android 9 / API 28 为最低版本。" +
@@ -185,6 +258,120 @@ public class MainActivity extends Activity {
         if (speedLabel != null) speedLabel.setText("光标最大速度：" + speed + " dp/s");
         if (deadzoneLabel != null) deadzoneLabel.setText("摇杆死区：" + dz + "%");
         if (sizeLabel != null) sizeLabel.setText("光标大小：" + size + " dp");
+        if (scrollDeadzoneLabel != null) {
+            scrollDeadzoneLabel.setText("滚动死区：" + (scrollDeadzoneSeek.getProgress() + 5) + "%");
+        }
+        if (scrollSensitivityLabel != null) {
+            scrollSensitivityLabel.setText("滚动灵敏度：" + (scrollSensitivitySeek.getProgress() + 50) + "%");
+        }
+        if (scrollSpeedLabel != null) {
+            scrollSpeedLabel.setText("最大滚动速度：" + (scrollSpeedSeek.getProgress() + 200) + " px/s");
+        }
+    }
+
+    private void addMappingRow(LinearLayout root, int index) {
+        LinearLayout row = mappingRow();
+        row.addView(rowLabel(Prefs.ACTION_NAMES[index]), new LinearLayout.LayoutParams(0, dp(54), 1));
+        Button set = button(keyName(Prefs.actionKey(this, index)));
+        set.setOnClickListener(v -> beginCapture(index, 0));
+        row.addView(set, new LinearLayout.LayoutParams(dp(250), dp(50)));
+        Button clear = button("清除");
+        clear.setOnClickListener(v -> {
+            prefs.edit().putInt("key_" + Prefs.ACTION_IDS[index], KeyEvent.KEYCODE_UNKNOWN).apply();
+            setContentView(buildUi());
+        });
+        row.addView(clear, new LinearLayout.LayoutParams(dp(100), dp(50)));
+        root.addView(row);
+    }
+
+    private void addComboRow(LinearLayout root, int which, String label, int keyCode) {
+        LinearLayout row = mappingRow();
+        row.addView(rowLabel(label), new LinearLayout.LayoutParams(0, dp(54), 1));
+        Button set = button(keyName(keyCode));
+        set.setOnClickListener(v -> beginCapture(-1, which));
+        row.addView(set, new LinearLayout.LayoutParams(dp(250), dp(50)));
+        root.addView(row);
+    }
+
+    private LinearLayout mappingRow() {
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        return row;
+    }
+
+    private TextView rowLabel(String value) {
+        TextView label = text(value, 17, false);
+        label.setGravity(Gravity.CENTER_VERTICAL);
+        return label;
+    }
+
+    private String keyName(int code) {
+        return code == KeyEvent.KEYCODE_UNKNOWN ? "未绑定" : KeyEvent.keyCodeToString(code);
+    }
+
+    private void beginCapture(int action, int combo) {
+        captureAction = action;
+        captureCombo = combo;
+        captureReadyAt = SystemClock.uptimeMillis() + 250;
+        Toast.makeText(this, "请按一下要绑定的手柄实体按键", Toast.LENGTH_LONG).show();
+    }
+
+    @Override public boolean dispatchKeyEvent(KeyEvent event) {
+        if (isCapturingKey()) {
+            if (event.getAction() == KeyEvent.ACTION_UP && isCaptureReady()) {
+                finishCapture(event.getKeyCode());
+            }
+            return true;
+        }
+        return super.dispatchKeyEvent(event);
+    }
+
+    static boolean isCapturingKey() {
+        return captureAction >= 0 || captureCombo != 0;
+    }
+
+    static boolean isCaptureReady() {
+        return SystemClock.uptimeMillis() >= captureReadyAt;
+    }
+
+    static void deliverCapturedKey(int keyCode) {
+        MainActivity activity = instance;
+        if (activity != null) activity.runOnUiThread(() -> activity.finishCapture(keyCode));
+    }
+
+    private void finishCapture(int keyCode) {
+        int action = captureAction;
+        int combo = captureCombo;
+        if (action < 0 && combo == 0) return;
+        if (hasConflict(keyCode, action, combo)) {
+            Toast.makeText(this, "该按键已被其它动作或模式组合占用，请换一个键", Toast.LENGTH_LONG).show();
+            return;
+        }
+        SharedPreferences.Editor edit = prefs.edit();
+        if (action >= 0) edit.putInt("key_" + Prefs.ACTION_IDS[action], keyCode);
+        else edit.putInt(combo == 1 ? "combo_first" : "combo_second", keyCode);
+        edit.apply();
+        captureAction = -1;
+        captureCombo = 0;
+        captureReadyAt = 0;
+        setContentView(buildUi());
+    }
+
+    private boolean hasConflict(int keyCode, int ignoredAction, int ignoredCombo) {
+        for (int i = 0; i < Prefs.ACTION_IDS.length; i++) {
+            if (i != ignoredAction && Prefs.actionKey(this, i) == keyCode) return true;
+        }
+        if (ignoredCombo != 1 && Prefs.comboFirst(this) == keyCode) return true;
+        return ignoredCombo != 2 && Prefs.comboSecond(this) == keyCode;
+    }
+
+    @Override protected void onDestroy() {
+        if (instance == this) instance = null;
+        captureAction = -1;
+        captureCombo = 0;
+        captureReadyAt = 0;
+        super.onDestroy();
     }
 
     private void updateStatus() {

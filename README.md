@@ -1,4 +1,4 @@
-# PadCursor TV
+# PadCursor TV v0.3.0
 
 一个面向 **Android TV / Android 9（API 28）** 的轻量手柄鼠标项目。
 
@@ -8,6 +8,8 @@
 - 摇杆控制电视本机的屏幕光标。
 - A 模拟点击，X 模拟长按，B 返回，Y 回主页。
 - LB/RB 滚动。
+- 右摇杆 Y 轴连续滚动，支持独立死区、灵敏度和速度设置。
+- 单击、长按、返回、主页、滚动和居中均可自定义按键。
 - `START + SELECT` 在“电视鼠标模式”和“手柄直通模式”之间切换。
 - 手柄直通模式用于 Moonlight：应用撤掉输入覆盖层，Moonlight/游戏直接收到手柄。
 
@@ -46,6 +48,22 @@ Android 9 的 `AccessibilityService` 本身没有 Android 新版那种全局 `on
 | RB | 向下滚动 |
 | L3 / R3 | 光标居中 |
 | START + SELECT | 鼠标模式 / 手柄直通切换 |
+
+模式切换组合键也可以自定义。组合键全部释放后才切换模式，避免 Moonlight 远端收到按下却收不到松开。
+
+## v0.3.0 右摇杆滚动
+
+- 向上或向下推动右摇杆即可连续滚动，松杆立即停止。
+- 自动兼容常见 `AXIS_RZ` 与 `AXIS_RY` 右摇杆 Y 轴。
+- 滚动死区：5%–60%，默认 22%。
+- 滚动灵敏度：50%–200%，默认 100%。
+- 最大滚动速度：200–2400 px/s，默认 900 px/s。
+- 仅在鼠标模式运行；手柄直通模式会删除输入覆盖层，不读取或消费摇杆事件。
+- 原有“使用右摇杆控制光标”设置仍保留。启用它时，为避免冲突，右摇杆滚动自动暂停。
+
+## 自定义按键映射
+
+设置页可重新绑定或清除以下动作：单击、长按、返回、主页、向上滚动、向下滚动、光标居中。普通动作不能占用模式切换组合键，同一个实体按键不能同时绑定多个动作。可一键恢复默认映射。
 
 ## 编译
 
@@ -105,7 +123,7 @@ START + SELECT
 
 此时透明输入层被删除，Moonlight可直接接收摇杆、扳机和全部手柄按键。
 
-需要重新控制电视时再次按 `START + SELECT`。
+需要重新控制电视时再次按 `START + SELECT`。切换组合键仅被旁听而不消费，全部释放后再恢复鼠标模式，因此 Moonlight 能收到完整的按下与松开事件。
 
 ## 已知兼容性风险
 
@@ -129,6 +147,8 @@ com.lantern.padcursor
 
 ## GitHub Actions 在线编译
 
-仓库已包含 `.github/workflows/build-apk.yml`。把整个项目上传到 GitHub 后，在 **Actions → Build PadCursorTV APK → Run workflow** 即可云端编译。成功后从运行页面底部 **Artifacts** 下载 `PadCursorTV-Android9-APK`。
+仓库已包含 `.github/workflows/build-apk.yml`。先按照 [SIGNING.md](SIGNING.md) 配置四项 GitHub Actions Secrets，再在 **Actions → Build PadCursorTV APK → Run workflow** 云端编译。成功后从运行页面底部 **Artifacts** 下载 `PadCursorTV-Android9-v0.3.0-APK`，解压后得到 `PadCursorTV-Android9-v0.3.0-release.apk`。
 
 在线构建固定使用 JDK 17、Gradle 8.7、Android Gradle Plugin 8.5.2，APK 最低支持 Android 9 / API 28。
+
+> 包名继续使用 `com.lantern.padcursor`，GitHub Actions 使用 Secrets 中的固定 JKS。若电视现有版本使用另一份 Debug 签名，首次迁移仍会提示 `INSTALL_FAILED_UPDATE_INCOMPATIBLE`，需要卸载旧版；安装固定签名版后，未来版本即可覆盖升级。

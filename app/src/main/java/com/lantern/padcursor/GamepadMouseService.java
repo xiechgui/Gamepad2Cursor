@@ -3,12 +3,12 @@ package com.lantern.padcursor;
 import android.accessibilityservice.AccessibilityService;
 import android.accessibilityservice.AccessibilityServiceInfo;
 import android.accessibilityservice.GestureDescription;
-import android.content.Context;
 import android.content.SharedPreferences;
 import android.graphics.Path;
 import android.graphics.PixelFormat;
 import android.os.Handler;
 import android.os.Looper;
+import android.os.SystemClock;
 import android.view.Gravity;
 import android.view.InputDevice;
 import android.view.KeyEvent;
@@ -16,131 +16,131 @@ import android.view.WindowManager;
 import android.view.accessibility.AccessibilityEvent;
 import android.widget.Toast;
 
-public class GamepadMouseService extends AccessibilityService {
-    private static final String PREFS = "padcursor";
-    private static volatile GamepadMouseService instance;
+import java.util.HashSet;
+import java.util.Set;
 
+public class GamepadMouseService extends AccessibilityService {
+    private static volatile GamepadMouseService instance;
     private WindowManager windowManager;
     private CursorOverlayView overlay;
     private boolean mouseMode;
-
-    private boolean startDown;
-    private boolean selectDown;
     private boolean comboLatched;
+    private boolean scrollGestureRunning;
+    private float pendingScrollAxis;
+    private long lastScrollStarted;
+    private final Set<Integer> downKeys = new HashSet<>();
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
 
-    public static GamepadMouseService getInstance() {
-        return instance;
-    }
+    public static GamepadMouseService getInstance() { return instance; }
 
-    @Override
-    protected void onServiceConnected() {
+    @Override protected void onServiceConnected() {
         super.onServiceConnected();
         instance = this;
-
         AccessibilityServiceInfo info = getServiceInfo();
         info.flags |= AccessibilityServiceInfo.FLAG_REQUEST_FILTER_KEY_EVENTS;
         setServiceInfo(info);
-
-        SharedPreferences p = getSharedPreferences(PREFS, Context.MODE_PRIVATE);
+        SharedPreferences p = Prefs.get(this);
         mouseMode = p.getBoolean("mouse_mode", true);
-        if (mouseMode) {
-            showOverlay();
-        }
-        toast("PadCursor 已启动；START + SELECT 切换鼠标/手柄直通模式");
+        if (mouseMode) showOverlay();
+        toast("PadCursor 已启动；默认 START + SELECT 切换模式");
     }
 
-    @Override
-    public void onAccessibilityEvent(AccessibilityEvent event) {
-        // No UI inspection is required. We only use AccessibilityService for
-        // global key filtering, overlay display, global actions and gestures.
+    @Override public void onAccessibilityEvent(AccessibilityEvent event) {
+        // No UI content is inspected.
     }
 
-    @Override
-    public void onInterrupt() {
-    }
+    @Override public void onInterrupt() {}
 
-    @Override
-    protected boolean onKeyEvent(KeyEvent event) {
-        if (!isGamepadEvent(event)) {
-            return false;
+    @Override protected boolean onKeyEvent(KeyEvent event) {
+        if (!isGamepadEvent(event)) return false;
+        if (MainActivity.isCapturingKey()) {
+            if (event.getAction() == KeyEvent.ACTION_UP && MainActivity.isCaptureReady()) {
+                MainActivity.deliverCapturedKey(event.getKeyCode());
+            }
+            return true;
         }
 
         int code = event.getKeyCode();
-        boolean down = event.getAction() == KeyEvent.ACTION_DOWN;
+        if (event.getAction() == KeyEvent.ACTION_DOWN) downKeys.add(code);
+        else if (event.getAction() == KeyEvent.ACTION_UP) downKeys.remove(code);
 
-        if (code == KeyEvent.KEYCODE_BUTTON_START) {
-            startDown = down;
-        }
-        if (code == KeyEvent.KEYCODE_BUTTON_SELECT || code == KeyEvent.KEYCODE_BACK) {
-            selectDown = down;
-        }
+        int comboFirst = Prefs.comboFirst(this);
+        int comboSecond = Prefs.comboSecond(this);
+        boolean firstDown = downKeys.contains(comboFirst);
+        boolean secondDown = downKeys.contains(comboSecond)
+                || (comboSecond == KeyEvent.KEYCODE_BUTTON_SELECT
+                && downKeys.contains(KeyEvent.KEYCODE_BACK));
+        if (firstDown && secondDown) comboLatched = true;
 
-        if (startDown && selectDown && !comboLatched) {
-            comboLatched = true;
-            setMouseMode(!mouseMode);
-            return true;
-        }
-        if (!startDown || !selectDown) {
+        boolean wasMouseMode = mouseMode;
+        if (comboLatched && event.getAction() == KeyEvent.ACTION_UP
+                && !firstDown && !secondDown) {
             comboLatched = false;
+            setMouseMode(!mouseMode);
+            return wasMouseMode;
         }
 
-        if (!mouseMode) {
-            // Pass all ordinary controller events to Moonlight/games.
-            return false;
-        }
+        if (!mouseMode) return false;
 
-        if (event.getAction() != KeyEvent.ACTION_DOWN || event.getRepeatCount() > 0) {
+        if (comboLatched || code == comboFirst || code == comboSecond
+                || (comboSecond == KeyEvent.KEYCODE_BUTTON_SELECT
+                && code == KeyEvent.KEYCODE_BACK)) {
             return true;
         }
 
+        if (event.getAction() == KeyEvent.ACTION_DOWN && event.getRepeatCount() == 0) {
+            int action = actionForKey(code);
+            if (action >= 0) performMappedAction(action);
+            else performLegacyFallback(code);
+        }
+        return true;
+    }
+
+    private int actionForKey(int code) {
+        for (int i = 0; i < Prefs.ACTION_IDS.length; i++) {
+            int configured = Prefs.actionKey(this, i);
+            if (configured != KeyEvent.KEYCODE_UNKNOWN && configured == code) return i;
+        }
+        return -1;
+    }
+
+    private void performMappedAction(int action) {
+        switch (action) {
+            case 0: tapAtCursor(55); break;
+            case 1: tapAtCursor(650); break;
+            case 2: performGlobalAction(GLOBAL_ACTION_BACK); break;
+            case 3: performGlobalAction(GLOBAL_ACTION_HOME); break;
+            case 4: scrollAtCursor(false); break;
+            case 5: scrollAtCursor(true); break;
+            case 6: if (overlay != null) overlay.centerCursor(); break;
+            default: break;
+        }
+    }
+
+    private void performLegacyFallback(int code) {
         switch (code) {
-            case KeyEvent.KEYCODE_BUTTON_A:
             case KeyEvent.KEYCODE_ENTER:
             case KeyEvent.KEYCODE_DPAD_CENTER:
                 tapAtCursor(55);
-                return true;
-
-            case KeyEvent.KEYCODE_BUTTON_X:
-                tapAtCursor(650);
-                return true;
-
-            case KeyEvent.KEYCODE_BUTTON_B:
-                performGlobalAction(GLOBAL_ACTION_BACK);
-                return true;
-
-            case KeyEvent.KEYCODE_BUTTON_Y:
-                performGlobalAction(GLOBAL_ACTION_HOME);
-                return true;
-
-            case KeyEvent.KEYCODE_BUTTON_L1:
-                scrollAtCursor(false);
-                return true;
-
-            case KeyEvent.KEYCODE_BUTTON_R1:
-                scrollAtCursor(true);
-                return true;
-
-            case KeyEvent.KEYCODE_BUTTON_THUMBL:
+                break;
             case KeyEvent.KEYCODE_BUTTON_THUMBR:
-                if (overlay != null) overlay.centerCursor();
-                return true;
-
+                if (overlay != null && Prefs.actionKey(this, 6) != code) overlay.centerCursor();
+                break;
             case KeyEvent.KEYCODE_DPAD_LEFT:
                 if (overlay != null) overlay.nudge(-1, 0);
-                return true;
+                break;
             case KeyEvent.KEYCODE_DPAD_RIGHT:
                 if (overlay != null) overlay.nudge(1, 0);
-                return true;
+                break;
             case KeyEvent.KEYCODE_DPAD_UP:
                 if (overlay != null) overlay.nudge(0, -1);
-                return true;
+                break;
             case KeyEvent.KEYCODE_DPAD_DOWN:
                 if (overlay != null) overlay.nudge(0, 1);
-                return true;
+                break;
+            default:
+                break;
         }
-
-        return true;
     }
 
     private boolean isGamepadEvent(KeyEvent event) {
@@ -151,9 +151,9 @@ public class GamepadMouseService extends AccessibilityService {
 
     public void setMouseMode(boolean enabled) {
         mouseMode = enabled;
-        getSharedPreferences(PREFS, MODE_PRIVATE)
-                .edit().putBoolean("mouse_mode", enabled).apply();
-
+        Prefs.get(this).edit().putBoolean("mouse_mode", enabled).apply();
+        pendingScrollAxis = 0f;
+        scrollGestureRunning = false;
         if (enabled) {
             showOverlay();
             toast("鼠标模式：开");
@@ -163,14 +163,56 @@ public class GamepadMouseService extends AccessibilityService {
         }
     }
 
-    public boolean isMouseMode() {
-        return mouseMode;
-    }
+    public boolean isMouseMode() { return mouseMode; }
 
     public void applySettings() {
-        if (overlay != null) {
-            overlay.reloadSettings();
-        }
+        if (overlay != null) overlay.reloadSettings();
+    }
+
+    public void onRightStickScroll(float rawAxis) {
+        pendingScrollAxis = rawAxis;
+        if (!mouseMode || overlay == null || scrollGestureRunning) return;
+        float value = applyScrollCurve(rawAxis);
+        if (value == 0f) return;
+        long now = SystemClock.uptimeMillis();
+        if (now - lastScrollStarted < 50) return;
+        float delta = -Prefs.scrollSpeed(this) * value * 0.05f;
+        if (Math.abs(delta) < 10f) delta = Math.copySign(10f, delta);
+        startScrollGesture(delta);
+        lastScrollStarted = now;
+    }
+
+    private float applyScrollCurve(float value) {
+        float deadzone = Prefs.scrollDeadzone(this);
+        float abs = Math.abs(value);
+        if (abs <= deadzone) return 0f;
+        float normalized = Math.min(1f, (abs - deadzone) / Math.max(0.001f, 1f - deadzone));
+        float curved = (float) Math.pow(normalized, 1f / Prefs.scrollSensitivity(this));
+        return Math.copySign(curved, value);
+    }
+
+    private void startScrollGesture(float deltaY) {
+        if (overlay == null) return;
+        float x = overlay.getCursorX();
+        float startY = Math.max(100f, Math.min(overlay.getHeight() - 100f, overlay.getCursorY()));
+        float endY = Math.max(35f, Math.min(overlay.getHeight() - 35f, startY + deltaY));
+        Path path = new Path();
+        path.moveTo(x, startY);
+        path.lineTo(x, endY);
+        GestureDescription gesture = new GestureDescription.Builder()
+                .addStroke(new GestureDescription.StrokeDescription(path, 0, 45)).build();
+        scrollGestureRunning = true;
+        boolean accepted = dispatchGesture(gesture, new GestureResultCallback() {
+            @Override public void onCompleted(GestureDescription gestureDescription) {
+                scrollGestureRunning = false;
+                onRightStickScroll(pendingScrollAxis);
+            }
+
+            @Override public void onCancelled(GestureDescription gestureDescription) {
+                scrollGestureRunning = false;
+            }
+        }, null);
+        if (!accepted) scrollGestureRunning = false;
     }
 
     private void showOverlay() {
@@ -178,10 +220,8 @@ public class GamepadMouseService extends AccessibilityService {
             overlay.requestFocus();
             return;
         }
-
         windowManager = (WindowManager) getSystemService(WINDOW_SERVICE);
         overlay = new CursorOverlayView(this, this);
-
         WindowManager.LayoutParams lp = new WindowManager.LayoutParams(
                 WindowManager.LayoutParams.MATCH_PARENT,
                 WindowManager.LayoutParams.MATCH_PARENT,
@@ -193,7 +233,6 @@ public class GamepadMouseService extends AccessibilityService {
                 PixelFormat.TRANSLUCENT);
         lp.gravity = Gravity.TOP | Gravity.START;
         lp.setTitle("PadCursor TV Input Overlay");
-
         try {
             windowManager.addView(overlay, lp);
             overlay.postDelayed(overlay::requestFocus, 120);
@@ -205,26 +244,17 @@ public class GamepadMouseService extends AccessibilityService {
 
     private void hideOverlay() {
         if (windowManager != null && overlay != null) {
-            try {
-                windowManager.removeView(overlay);
-            } catch (Exception ignored) {
-            }
+            try { windowManager.removeView(overlay); } catch (Exception ignored) {}
         }
         overlay = null;
     }
 
     private void tapAtCursor(long durationMs) {
         if (overlay == null) return;
-        float x = overlay.getCursorX();
-        float y = overlay.getCursorY();
-
         Path path = new Path();
-        path.moveTo(x, y);
-        GestureDescription.StrokeDescription stroke =
-                new GestureDescription.StrokeDescription(path, 0, durationMs);
+        path.moveTo(overlay.getCursorX(), overlay.getCursorY());
         GestureDescription gesture = new GestureDescription.Builder()
-                .addStroke(stroke)
-                .build();
+                .addStroke(new GestureDescription.StrokeDescription(path, 0, durationMs)).build();
         dispatchGesture(gesture, null, null);
     }
 
@@ -233,24 +263,15 @@ public class GamepadMouseService extends AccessibilityService {
         float x = overlay.getCursorX();
         float y = overlay.getCursorY();
         float distance = Math.max(180f, overlay.getHeight() * 0.28f);
-
-        float startY;
-        float endY;
-        if (down) {
-            // Finger swipe upward -> content scrolls down.
-            startY = Math.min(overlay.getHeight() - 80f, y + distance / 2f);
-            endY = Math.max(80f, y - distance / 2f);
-        } else {
-            startY = Math.max(80f, y - distance / 2f);
-            endY = Math.min(overlay.getHeight() - 80f, y + distance / 2f);
-        }
-
+        float startY = down ? Math.min(overlay.getHeight() - 80f, y + distance / 2f)
+                : Math.max(80f, y - distance / 2f);
+        float endY = down ? Math.max(80f, y - distance / 2f)
+                : Math.min(overlay.getHeight() - 80f, y + distance / 2f);
         Path path = new Path();
         path.moveTo(x, startY);
         path.lineTo(x, endY);
         GestureDescription gesture = new GestureDescription.Builder()
-                .addStroke(new GestureDescription.StrokeDescription(path, 0, 280))
-                .build();
+                .addStroke(new GestureDescription.StrokeDescription(path, 0, 280)).build();
         dispatchGesture(gesture, null, null);
     }
 
@@ -258,9 +279,9 @@ public class GamepadMouseService extends AccessibilityService {
         mainHandler.post(() -> Toast.makeText(this, text, Toast.LENGTH_SHORT).show());
     }
 
-    @Override
-    public void onDestroy() {
+    @Override public void onDestroy() {
         hideOverlay();
+        mainHandler.removeCallbacksAndMessages(null);
         if (instance == this) instance = null;
         super.onDestroy();
     }
