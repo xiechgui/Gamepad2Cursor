@@ -62,20 +62,22 @@ public class GamepadMouseService extends AccessibilityService {
 
     private boolean handleControllerKey(KeyEvent event, boolean fromFocusedOverlay) {
         int code = event.getKeyCode();
+        int token = Prefs.eventToken(code, event.getScanCode());
+        MainActivity.reportKeyEvent(event, fromFocusedOverlay ? "OVERLAY" : "ACCESSIBILITY");
 
         // Some Android TV firmwares report part of a controller as SOURCE_KEYBOARD.
         // Key capture therefore deliberately runs before source classification.
         if (MainActivity.isCapturingKey()) {
             if (event.getAction() == KeyEvent.ACTION_UP && MainActivity.isCaptureReady()) {
-                MainActivity.deliverCapturedKey(code);
+                MainActivity.deliverCapturedKey(token);
             }
             return true;
         }
 
-        int mappedAction = actionForKey(code);
+        int mappedAction = actionForKey(token);
         int comboFirst = Prefs.comboFirst(this);
         int comboSecond = Prefs.comboSecond(this);
-        boolean comboKey = code == comboFirst || code == comboSecond;
+        boolean comboKey = token == comboFirst || token == comboSecond;
         boolean legacyKey = isLegacyFallbackKey(code);
         boolean gamepadSource = isGamepadEvent(event);
 
@@ -84,8 +86,8 @@ public class GamepadMouseService extends AccessibilityService {
         if (!fromFocusedOverlay && !gamepadSource
                 && mappedAction < 0 && !comboKey && !legacyKey) return false;
 
-        if (event.getAction() == KeyEvent.ACTION_DOWN) downKeys.add(code);
-        else if (event.getAction() == KeyEvent.ACTION_UP) downKeys.remove(code);
+        if (event.getAction() == KeyEvent.ACTION_DOWN) downKeys.add(token);
+        else if (event.getAction() == KeyEvent.ACTION_UP) downKeys.remove(token);
 
         boolean firstDown = downKeys.contains(comboFirst);
         boolean secondDown = downKeys.contains(comboSecond);

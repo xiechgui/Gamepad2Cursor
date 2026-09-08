@@ -42,6 +42,9 @@ public class MainActivity extends Activity {
     private TextView scrollDeadzoneLabel;
     private TextView scrollSensitivityLabel;
     private TextView scrollSpeedLabel;
+    private TextView inputMonitor;
+    private Button[] mappingButtons;
+    private Button[] comboButtons;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -58,6 +61,8 @@ public class MainActivity extends Activity {
     }
 
     private View buildUi() {
+        mappingButtons = new Button[Prefs.ACTION_IDS.length];
+        comboButtons = new Button[2];
         ScrollView scroll = new ScrollView(this);
         scroll.setFillViewport(true);
 
@@ -69,7 +74,7 @@ public class MainActivity extends Activity {
                 ScrollView.LayoutParams.MATCH_PARENT,
                 ScrollView.LayoutParams.WRAP_CONTENT));
 
-        TextView title = text("PadCursor TV v0.3.2", 30, true);
+        TextView title = text("PadCursor TV v0.3.3", 30, true);
         root.addView(title);
 
         statusView = text("", 20, true);
@@ -222,6 +227,9 @@ public class MainActivity extends Activity {
         TextView mappingHeading = text("自定义按键映射", 22, true);
         mappingHeading.setPadding(0, dp(22), 0, dp(8));
         root.addView(mappingHeading);
+        inputMonitor = text("最近按键：等待输入", 16, false);
+        inputMonitor.setPadding(0, 0, 0, dp(8));
+        root.addView(inputMonitor);
         for (int i = 0; i < Prefs.ACTION_IDS.length; i++) addMappingRow(root, i);
 
         TextView comboHeading = text("模式切换组合键", 22, true);
@@ -236,7 +244,11 @@ public class MainActivity extends Activity {
         resetMappings.setOnClickListener(v -> {
             Prefs.resetMappings(this);
             Toast.makeText(this, "已恢复默认按键映射", Toast.LENGTH_SHORT).show();
-            setContentView(buildUi());
+            for (int i = 0; i < mappingButtons.length; i++) {
+                mappingButtons[i].setText(keyName(Prefs.actionKey(this, i)));
+            }
+            comboButtons[0].setText(keyName(Prefs.comboFirst(this)));
+            comboButtons[1].setText(keyName(Prefs.comboSecond(this)));
         });
         root.addView(resetMappings, lp());
 
@@ -273,12 +285,13 @@ public class MainActivity extends Activity {
         LinearLayout row = mappingRow();
         row.addView(rowLabel(Prefs.ACTION_NAMES[index]), new LinearLayout.LayoutParams(0, dp(54), 1));
         Button set = button(keyName(Prefs.actionKey(this, index)));
+        mappingButtons[index] = set;
         set.setOnClickListener(v -> beginCapture(index, 0));
         row.addView(set, new LinearLayout.LayoutParams(dp(250), dp(50)));
         Button clear = button("清除");
         clear.setOnClickListener(v -> {
             prefs.edit().putInt("key_" + Prefs.ACTION_IDS[index], KeyEvent.KEYCODE_UNKNOWN).apply();
-            setContentView(buildUi());
+            mappingButtons[index].setText("未绑定");
         });
         row.addView(clear, new LinearLayout.LayoutParams(dp(100), dp(50)));
         root.addView(row);
@@ -288,6 +301,7 @@ public class MainActivity extends Activity {
         LinearLayout row = mappingRow();
         row.addView(rowLabel(label), new LinearLayout.LayoutParams(0, dp(54), 1));
         Button set = button(keyName(keyCode));
+        comboButtons[which - 1] = set;
         set.setOnClickListener(v -> beginCapture(-1, which));
         row.addView(set, new LinearLayout.LayoutParams(dp(250), dp(50)));
         root.addView(row);
@@ -307,7 +321,8 @@ public class MainActivity extends Activity {
     }
 
     private String keyName(int code) {
-        return code == KeyEvent.KEYCODE_UNKNOWN ? "未绑定" : KeyEvent.keyCodeToString(code);
+        if (code == KeyEvent.KEYCODE_UNKNOWN) return "未绑定";
+        return code < 0 ? "SCAN_" + (-code) : KeyEvent.keyCodeToString(code);
     }
 
     private void beginCapture(int action, int combo) {
@@ -319,8 +334,9 @@ public class MainActivity extends Activity {
 
     @Override public boolean dispatchKeyEvent(KeyEvent event) {
         if (isCapturingKey()) {
+            reportKeyEvent(event, "ACTIVITY");
             if (event.getAction() == KeyEvent.ACTION_UP && isCaptureReady()) {
-                finishCapture(event.getKeyCode());
+                finishCapture(Prefs.eventToken(event.getKeyCode(), event.getScanCode()));
             }
             return true;
         }
@@ -335,15 +351,39 @@ public class MainActivity extends Activity {
         return SystemClock.uptimeMillis() >= captureReadyAt;
     }
 
-    static void deliverCapturedKey(int keyCode) {
+    static void deliverCapturedKey(int keyToken) {
         MainActivity activity = instance;
-        if (activity != null) activity.runOnUiThread(() -> activity.finishCapture(keyCode));
+        if (activity != null) activity.runOnUiThread(() -> activity.finishCapture(keyToken));
+    }
+
+    static void reportKeyEvent(KeyEvent event, String route) {
+        if (event.getAction() != KeyEvent.ACTION_DOWN) return;
+        MainActivity activity = instance;
+        if (activity == null) return;
+        int keyCode = event.getKeyCode();
+        int scanCode = event.getScanCode();
+        int source = event.getSource();
+        int deviceId = event.getDeviceId();
+        activity.runOnUiThread(() -> {
+            if (activity.inputMonitor != null) {
+                activity.inputMonitor.setText("最近按键：" + KeyEvent.keyCodeToString(keyCode)
+                        + "  keyCode=" + keyCode
+                        + "  scanCode=" + scanCode
+                        + "  source=0x" + Integer.toHexString(source)
+                        + "  device=" + deviceId
+                        + "  path=" + route);
+            }
+        });
     }
 
     private void finishCapture(int keyCode) {
         int action = captureAction;
         int combo = captureCombo;
         if (action < 0 && combo == 0) return;
+        if (keyCode == KeyEvent.KEYCODE_UNKNOWN) {
+            Toast.makeText(this, "该输入没有可用的 keyCode 或 scanCode，请换一个按键", Toast.LENGTH_LONG).show();
+            return;
+        }
         if (hasConflict(keyCode, action, combo)) {
             Toast.makeText(this, "该按键已被其它动作或模式组合占用，请换一个键", Toast.LENGTH_LONG).show();
             return;
@@ -352,10 +392,14 @@ public class MainActivity extends Activity {
         if (action >= 0) edit.putInt("key_" + Prefs.ACTION_IDS[action], keyCode);
         else edit.putInt(combo == 1 ? "combo_first" : "combo_second", keyCode);
         edit.apply();
+        if (action >= 0 && mappingButtons != null) {
+            mappingButtons[action].setText(keyName(keyCode));
+        } else if (combo > 0 && comboButtons != null) {
+            comboButtons[combo - 1].setText(keyName(keyCode));
+        }
         captureAction = -1;
         captureCombo = 0;
         captureReadyAt = 0;
-        setContentView(buildUi());
     }
 
     private boolean hasConflict(int keyCode, int ignoredAction, int ignoredCombo) {

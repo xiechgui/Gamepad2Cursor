@@ -33,6 +33,11 @@ final class Prefs {
         return get(context).getInt("key_" + ACTION_IDS[index], DEFAULT_KEYS[index]);
     }
 
+    static int eventToken(int keyCode, int scanCode) {
+        if (keyCode != KeyEvent.KEYCODE_UNKNOWN) return keyCode;
+        return scanCode > 0 ? -scanCode : KeyEvent.KEYCODE_UNKNOWN;
+    }
+
     static int comboFirst(Context context) {
         return get(context).getInt("combo_first", KeyEvent.KEYCODE_BUTTON_START);
     }
