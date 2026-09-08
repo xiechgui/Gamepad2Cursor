@@ -69,7 +69,7 @@ public class MainActivity extends Activity {
                 ScrollView.LayoutParams.MATCH_PARENT,
                 ScrollView.LayoutParams.WRAP_CONTENT));
 
-        TextView title = text("PadCursor TV v0.3.0", 30, true);
+        TextView title = text("PadCursor TV v0.3.1", 30, true);
         root.addView(title);
 
         statusView = text("", 20, true);
@@ -243,7 +243,7 @@ public class MainActivity extends Activity {
         TextView note = text(
                 "兼容性说明：该版本专门以 Android 9 / API 28 为最低版本。" +
                 "它使用“可聚焦的辅助功能透明层”接收手柄摇杆，再通过 Accessibility dispatchGesture 模拟触摸。" +
-                "少数电视固件可能不把摇杆 MotionEvent 发送给这种覆盖层；若出现“按键有效但摇杆完全没反应”，需要针对该电视机型继续做输入层兼容。",
+                "少数电视固件可能不把摇杆 MotionEvent 发送给这种覆盖层。按键识别同时兼容 GAMEPAD、JOYSTICK 和电视固件以 KEYBOARD 来源上报的已配置键码。",
                 16, false);
         note.setPadding(0, dp(22), 0, dp(12));
         root.addView(note);

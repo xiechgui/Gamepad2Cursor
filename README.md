@@ -1,4 +1,4 @@
-# PadCursor TV v0.3.0
+# PadCursor TV v0.3.1
 
 一个面向 **Android TV / Android 9（API 28）** 的轻量手柄鼠标项目。
 
@@ -66,6 +66,12 @@ Android 9 的 `AccessibilityService` 本身没有 Android 新版那种全局 `on
 ## 自定义按键映射
 
 设置页可重新绑定或清除以下动作：单击、长按、返回、主页、向上滚动、向下滚动、光标居中。普通动作不能占用模式切换组合键，同一个实体按键不能同时绑定多个动作。可一键恢复默认映射。
+
+## v0.3.1 按键兼容性修复
+
+- 已配置按键不再强制要求系统输入来源为 `GAMEPAD` 或 `JOYSTICK`，兼容部分电视将 B/X/Y/LB/RB 标记为 `KEYBOARD` 来源的情况。
+- 移除容易与手柄 B/返回键冲突的 `BACK = SELECT` 隐式别名；如果手柄没有独立 SELECT，可在设置页明确绑定其它组合键。
+- `KEYCODE_BACK` 现在作为返回动作的兼容键处理。
 
 ## 编译
 
@@ -149,7 +155,7 @@ com.lantern.padcursor
 
 ## GitHub Actions 在线编译
 
-仓库已包含 `.github/workflows/build-apk.yml`。先按照 [SIGNING.md](SIGNING.md) 配置四项 GitHub Actions Secrets，再在 **Actions → Build PadCursorTV APK → Run workflow** 云端编译。成功后从运行页面底部 **Artifacts** 下载 `PadCursorTV-Android9-v0.3.0-APK`，解压后得到 `PadCursorTV-Android9-v0.3.0-release.apk`。
+仓库已包含 `.github/workflows/build-apk.yml`。先按照 [SIGNING.md](SIGNING.md) 配置四项 GitHub Actions Secrets，再在 **Actions → Build PadCursorTV APK → Run workflow** 云端编译。成功后从运行页面底部 **Artifacts** 下载 `PadCursorTV-Android9-v0.3.1-APK`，解压后得到 `PadCursorTV-Android9-v0.3.1-release.apk`。
 
 在线构建固定使用 JDK 17、Gradle 8.7、Android Gradle Plugin 8.5.2，APK 最低支持 Android 9 / API 28。
 

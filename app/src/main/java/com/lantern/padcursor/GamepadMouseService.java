@@ -52,24 +52,33 @@ public class GamepadMouseService extends AccessibilityService {
     @Override public void onInterrupt() {}
 
     @Override protected boolean onKeyEvent(KeyEvent event) {
-        if (!isGamepadEvent(event)) return false;
+        int code = event.getKeyCode();
+
+        // Some Android TV firmwares report part of a controller as SOURCE_KEYBOARD.
+        // Key capture therefore deliberately runs before source classification.
         if (MainActivity.isCapturingKey()) {
             if (event.getAction() == KeyEvent.ACTION_UP && MainActivity.isCaptureReady()) {
-                MainActivity.deliverCapturedKey(event.getKeyCode());
+                MainActivity.deliverCapturedKey(code);
             }
             return true;
         }
 
-        int code = event.getKeyCode();
+        int mappedAction = actionForKey(code);
+        int comboFirst = Prefs.comboFirst(this);
+        int comboSecond = Prefs.comboSecond(this);
+        boolean comboKey = code == comboFirst || code == comboSecond;
+        boolean legacyKey = isLegacyFallbackKey(code);
+        boolean gamepadSource = isGamepadEvent(event);
+
+        // Accept configured/known controller key codes even when JUUI labels
+        // their source as a keyboard. Leave unrelated remote/keyboard keys alone.
+        if (!gamepadSource && mappedAction < 0 && !comboKey && !legacyKey) return false;
+
         if (event.getAction() == KeyEvent.ACTION_DOWN) downKeys.add(code);
         else if (event.getAction() == KeyEvent.ACTION_UP) downKeys.remove(code);
 
-        int comboFirst = Prefs.comboFirst(this);
-        int comboSecond = Prefs.comboSecond(this);
         boolean firstDown = downKeys.contains(comboFirst);
-        boolean secondDown = downKeys.contains(comboSecond)
-                || (comboSecond == KeyEvent.KEYCODE_BUTTON_SELECT
-                && downKeys.contains(KeyEvent.KEYCODE_BACK));
+        boolean secondDown = downKeys.contains(comboSecond);
         if (firstDown && secondDown) comboLatched = true;
 
         boolean wasMouseMode = mouseMode;
@@ -82,15 +91,12 @@ public class GamepadMouseService extends AccessibilityService {
 
         if (!mouseMode) return false;
 
-        if (comboLatched || code == comboFirst || code == comboSecond
-                || (comboSecond == KeyEvent.KEYCODE_BUTTON_SELECT
-                && code == KeyEvent.KEYCODE_BACK)) {
+        if (comboLatched || comboKey) {
             return true;
         }
 
         if (event.getAction() == KeyEvent.ACTION_DOWN && event.getRepeatCount() == 0) {
-            int action = actionForKey(code);
-            if (action >= 0) performMappedAction(action);
+            if (mappedAction >= 0) performMappedAction(mappedAction);
             else performLegacyFallback(code);
         }
         return true;
@@ -123,6 +129,9 @@ public class GamepadMouseService extends AccessibilityService {
             case KeyEvent.KEYCODE_DPAD_CENTER:
                 tapAtCursor(55);
                 break;
+            case KeyEvent.KEYCODE_BACK:
+                performGlobalAction(GLOBAL_ACTION_BACK);
+                break;
             case KeyEvent.KEYCODE_BUTTON_THUMBR:
                 if (overlay != null && Prefs.actionKey(this, 6) != code) overlay.centerCursor();
                 break;
@@ -140,6 +149,22 @@ public class GamepadMouseService extends AccessibilityService {
                 break;
             default:
                 break;
+        }
+    }
+
+    private boolean isLegacyFallbackKey(int code) {
+        switch (code) {
+            case KeyEvent.KEYCODE_ENTER:
+            case KeyEvent.KEYCODE_DPAD_CENTER:
+            case KeyEvent.KEYCODE_BACK:
+            case KeyEvent.KEYCODE_BUTTON_THUMBR:
+            case KeyEvent.KEYCODE_DPAD_LEFT:
+            case KeyEvent.KEYCODE_DPAD_RIGHT:
+            case KeyEvent.KEYCODE_DPAD_UP:
+            case KeyEvent.KEYCODE_DPAD_DOWN:
+                return true;
+            default:
+                return false;
         }
     }
 
