@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">PadCursor TV</string>
+    <string name="service_name">PadCursor TV 手柄鼠标</string>
+    <string name="service_description">使用游戏手柄摇杆控制电视光标，并通过辅助功能模拟点击、返回、主页和滚动。</string>
+</resources>
