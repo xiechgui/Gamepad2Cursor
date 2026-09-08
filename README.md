@@ -21,6 +21,8 @@
 - 不需要“悬浮窗”权限
 - 需要开启 Android **辅助功能（Accessibility Service）**
 
+本项目用于电视侧载，不发布到 Google Play。构建配置只关闭了与 Google Play 上架期限有关的 `ExpiredTargetSdkVersion` 检查，其它 Android Lint 检查仍会执行。
+
 ## 原理
 
 Android 9 的 `AccessibilityService` 本身没有 Android 新版那种全局 `onMotionEvent()` API，无法直接在后台读取摇杆轴。

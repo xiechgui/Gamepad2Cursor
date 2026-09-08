@@ -50,4 +50,11 @@ android {
         sourceCompatibility JavaVersion.VERSION_1_8
         targetCompatibility JavaVersion.VERSION_1_8
     }
+
+    lint {
+        // This is a sideload-only Android TV utility. targetSdk 28 is kept
+        // intentionally for the original Android 9/JUUI behavior; the Google
+        // Play publication deadline does not apply to direct APK installs.
+        disable 'ExpiredTargetSdkVersion'
+    }
 }
