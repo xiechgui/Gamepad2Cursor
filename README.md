@@ -1,4 +1,4 @@
-# PadCursor TV v0.3.3
+# PadCursor TV v0.3.4
 
 一个面向 **Android TV / Android 9（API 28）** 的轻量手柄鼠标项目。
 
@@ -85,6 +85,14 @@ Android 9 的 `AccessibilityService` 本身没有 Android 新版那种全局 `on
 - 设置页显示最近输入的 `keyCode`、`scanCode`、`source`、`deviceId` 和输入路径，便于判断固件实际把按键送到了哪里。
 - 重新绑定、清除或恢复按键时只更新对应按钮，不再重建设置页，因此页面不会跳回顶部。
 
+## v0.3.4 横屏双栏与按键动作修复
+
+- 设置页改为左右双栏：左侧放运行状态、模式和摇杆/滚动参数，右侧放最近按键、动作结果及全部按键映射；两栏可独立滚动。
+- 按键行改为自适应宽度，适配 720p、1080p 和 4K 电视横屏。
+- 对辅助功能服务和透明层重复上报的同一物理按键进行去重，避免第二次注入取消第一次长按或滚动手势。
+- 映射动作延后到按键过滤回调结束后执行，兼容部分电视固件在原始按键仍处于分发阶段时拒绝全局返回、主页或模拟手势的问题。
+- 新增“最近动作”诊断，显示动作是“已提交”“执行失败”还是“重复事件已忽略”。
+
 ## 编译
 
 推荐 Android Studio：
@@ -167,7 +175,7 @@ com.lantern.padcursor
 
 ## GitHub Actions 在线编译
 
-仓库已包含 `.github/workflows/build-apk.yml`。先按照 [SIGNING.md](SIGNING.md) 配置四项 GitHub Actions Secrets，再在 **Actions → Build PadCursorTV APK → Run workflow** 云端编译。成功后从运行页面底部 **Artifacts** 下载 `PadCursorTV-Android9-v0.3.3-APK`，解压后得到 `PadCursorTV-Android9-v0.3.3-release.apk`。
+仓库已包含 `.github/workflows/build-apk.yml`。先按照 [SIGNING.md](SIGNING.md) 配置四项 GitHub Actions Secrets，再在 **Actions → Build PadCursorTV APK → Run workflow** 云端编译。成功后从运行页面底部 **Artifacts** 下载 `PadCursorTV-Android9-v0.3.4-APK`，解压后得到 `PadCursorTV-Android9-v0.3.4-release.apk`。
 
 在线构建固定使用 JDK 17、Gradle 8.7、Android Gradle Plugin 8.5.2，APK 最低支持 Android 9 / API 28。
 

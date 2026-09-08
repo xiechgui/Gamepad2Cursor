@@ -28,6 +28,9 @@ public class GamepadMouseService extends AccessibilityService {
     private boolean scrollGestureRunning;
     private float pendingScrollAxis;
     private long lastScrollStarted;
+    private int lastKeyToken = KeyEvent.KEYCODE_UNKNOWN;
+    private int lastKeyAction = -1;
+    private long lastKeyHandledAt;
     private final Set<Integer> downKeys = new HashSet<>();
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
 
@@ -64,6 +67,26 @@ public class GamepadMouseService extends AccessibilityService {
         int code = event.getKeyCode();
         int token = Prefs.eventToken(code, event.getScanCode());
         MainActivity.reportKeyEvent(event, fromFocusedOverlay ? "OVERLAY" : "ACCESSIBILITY");
+
+        // A number of Android TV builds deliver the same physical key through
+        // both AccessibilityService and the focused accessibility overlay.
+        // Dispatching the action twice cancels long-press/scroll gestures.
+        long now = SystemClock.uptimeMillis();
+        boolean duplicate = token == lastKeyToken
+                && event.getAction() == lastKeyAction
+                && now - lastKeyHandledAt < 45;
+        lastKeyToken = token;
+        lastKeyAction = event.getAction();
+        lastKeyHandledAt = now;
+        if (duplicate) {
+            if (event.getAction() == KeyEvent.ACTION_DOWN) {
+                int duplicateAction = actionForKey(token);
+                if (duplicateAction >= 0) {
+                    MainActivity.reportAction(Prefs.ACTION_NAMES[duplicateAction], true, true);
+                }
+            }
+            return mouseMode || MainActivity.isCapturingKey();
+        }
 
         // Some Android TV firmwares report part of a controller as SOURCE_KEYBOARD.
         // Key capture therefore deliberately runs before source classification.
@@ -108,7 +131,16 @@ public class GamepadMouseService extends AccessibilityService {
         }
 
         if (event.getAction() == KeyEvent.ACTION_DOWN && event.getRepeatCount() == 0) {
-            if (mappedAction >= 0) performMappedAction(mappedAction);
+            if (mappedAction >= 0) {
+                final int actionToRun = mappedAction;
+                // Run after the key-filter callback returns. This avoids vendor
+                // InputDispatcher implementations rejecting a global action or
+                // injected gesture while the original key is still dispatching.
+                mainHandler.post(() -> {
+                    boolean accepted = performMappedAction(actionToRun);
+                    MainActivity.reportAction(Prefs.ACTION_NAMES[actionToRun], accepted, false);
+                });
+            }
             else performLegacyFallback(code);
         }
         return true;
@@ -122,16 +154,19 @@ public class GamepadMouseService extends AccessibilityService {
         return -1;
     }
 
-    private void performMappedAction(int action) {
+    private boolean performMappedAction(int action) {
         switch (action) {
-            case 0: tapAtCursor(55); break;
-            case 1: tapAtCursor(650); break;
-            case 2: performGlobalAction(GLOBAL_ACTION_BACK); break;
-            case 3: performGlobalAction(GLOBAL_ACTION_HOME); break;
-            case 4: scrollAtCursor(false); break;
-            case 5: scrollAtCursor(true); break;
-            case 6: if (overlay != null) overlay.centerCursor(); break;
-            default: break;
+            case 0: return tapAtCursor(55);
+            case 1: return tapAtCursor(650);
+            case 2: return performGlobalAction(GLOBAL_ACTION_BACK);
+            case 3: return performGlobalAction(GLOBAL_ACTION_HOME);
+            case 4: return scrollAtCursor(false);
+            case 5: return scrollAtCursor(true);
+            case 6:
+                if (overlay == null) return false;
+                overlay.centerCursor();
+                return true;
+            default: return false;
         }
     }
 
@@ -286,17 +321,17 @@ public class GamepadMouseService extends AccessibilityService {
         overlay = null;
     }
 
-    private void tapAtCursor(long durationMs) {
-        if (overlay == null) return;
+    private boolean tapAtCursor(long durationMs) {
+        if (overlay == null) return false;
         Path path = new Path();
         path.moveTo(overlay.getCursorX(), overlay.getCursorY());
         GestureDescription gesture = new GestureDescription.Builder()
                 .addStroke(new GestureDescription.StrokeDescription(path, 0, durationMs)).build();
-        dispatchGesture(gesture, null, null);
+        return dispatchGesture(gesture, null, null);
     }
 
-    private void scrollAtCursor(boolean down) {
-        if (overlay == null) return;
+    private boolean scrollAtCursor(boolean down) {
+        if (overlay == null) return false;
         float x = overlay.getCursorX();
         float y = overlay.getCursorY();
         float distance = Math.max(180f, overlay.getHeight() * 0.28f);
@@ -309,7 +344,7 @@ public class GamepadMouseService extends AccessibilityService {
         path.lineTo(x, endY);
         GestureDescription gesture = new GestureDescription.Builder()
                 .addStroke(new GestureDescription.StrokeDescription(path, 0, 280)).build();
-        dispatchGesture(gesture, null, null);
+        return dispatchGesture(gesture, null, null);
     }
 
     private void toast(String text) {
