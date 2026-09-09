@@ -21,8 +21,8 @@ android {
         applicationId "com.lantern.padcursor"
         minSdk 28
         targetSdk 28
-        versionCode 9
-        versionName "0.3.6"
+        versionCode 10
+        versionName "0.4.0"
     }
 
     signingConfigs {
@@ -51,10 +51,20 @@ android {
         targetCompatibility JavaVersion.VERSION_1_8
     }
 
+    buildFeatures {
+        aidl true
+    }
+
     lint {
         // This is a sideload-only Android TV utility. targetSdk 28 is kept
         // intentionally for the original Android 9/JUUI behavior; the Google
         // Play publication deadline does not apply to direct APK installs.
         disable 'ExpiredTargetSdkVersion'
     }
+}
+
+dependencies {
+    def shizukuVersion = "13.1.5"
+    implementation "dev.rikka.shizuku:api:$shizukuVersion"
+    implementation "dev.rikka.shizuku:provider:$shizukuVersion"
 }

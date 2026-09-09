@@ -5,7 +5,7 @@
 ## 兼容范围
 
 - 最低 Android：9（API 28）
-- 版本：v0.3.6
+- 版本：v0.4.0
 - applicationId：`com.lantern.padcursor`（与旧版一致；签名相同时可覆盖安装）
 - 编译 SDK：34
 - 构建工具：Android Gradle Plugin 8.5.2 + Gradle 8.7 + JDK 17
@@ -20,15 +20,15 @@
 6. 点 **Run workflow**。
 7. 等待构建和签名验证完成。
 8. 进入这次运行页面底部 **Artifacts**。
-9. 下载 `PadCursorTV-Android9-v0.3.6-APK`。
-10. 解压后得到 `PadCursorTV-Android9-v0.3.6-release.apk`。
+9. 下载 `PadCursorTV-Android9-v0.4.0-APK`。
+10. 解压后得到 `PadCursorTV-Android9-v0.4.0-release.apk`。
 
 也可以直接 push 到 `main` 或 `master` 分支，工作流会自动构建。
 
 ## 安装
 
 ```bat
-adb install -r PadCursorTV-Android9-v0.3.6-release.apk
+adb install -r PadCursorTV-Android9-v0.4.0-release.apk
 ```
 
 GitHub Actions 每次都使用 Secrets 中保存的同一份 JKS，不会生成随机 Debug 签名。如果电视现有版本使用另一份签名，第一次迁移仍需先卸载旧版。

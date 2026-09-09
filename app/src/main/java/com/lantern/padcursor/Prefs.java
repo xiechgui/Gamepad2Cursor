@@ -6,12 +6,14 @@ import android.view.KeyEvent;
 
 final class Prefs {
     static final String FILE = "padcursor";
+    static final String BACKEND_ACCESSIBILITY = "accessibility";
+    static final String BACKEND_SHIZUKU = "shizuku";
 
     static final String[] ACTION_IDS = {
-            "click", "long_click", "back", "home", "scroll_up", "scroll_down", "center"
+            "click", "long_click", "back", "home", "scroll_up", "scroll_down", "center", "menu"
     };
     static final String[] ACTION_NAMES = {
-            "单击", "长按", "返回", "主页", "向上滚动", "向下滚动", "光标回到中心"
+            "单击", "长按", "返回", "主页", "向上滚动", "向下滚动", "光标回到中心", "菜单"
     };
     static final int[] DEFAULT_KEYS = {
             KeyEvent.KEYCODE_BUTTON_A,
@@ -20,7 +22,8 @@ final class Prefs {
             KeyEvent.KEYCODE_BUTTON_Y,
             KeyEvent.KEYCODE_BUTTON_L1,
             KeyEvent.KEYCODE_BUTTON_R1,
-            KeyEvent.KEYCODE_BUTTON_THUMBL
+            KeyEvent.KEYCODE_BUTTON_THUMBL,
+            KeyEvent.KEYCODE_UNKNOWN
     };
 
     private Prefs() {}
@@ -44,6 +47,14 @@ final class Prefs {
 
     static int comboSecond(Context context) {
         return get(context).getInt("combo_second", KeyEvent.KEYCODE_BUTTON_SELECT);
+    }
+
+    static String inputBackend(Context context) {
+        return get(context).getString("input_backend", BACKEND_ACCESSIBILITY);
+    }
+
+    static boolean usesShizuku(Context context) {
+        return BACKEND_SHIZUKU.equals(inputBackend(context));
     }
 
     static float scrollDeadzone(Context context) {

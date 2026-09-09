@@ -5,13 +5,14 @@ import android.content.SharedPreferences;
 import android.graphics.Canvas;
 import android.graphics.Paint;
 import android.view.InputDevice;
+import android.view.KeyEvent;
 import android.view.MotionEvent;
 import android.view.View;
 
 public class CursorOverlayView extends View {
     private static final String PREFS = "padcursor";
 
-    private final GamepadMouseService service;
+    private final CursorEventHost host;
     private final Paint fillPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint strokePaint = new Paint(Paint.ANTI_ALIAS_FLAG);
 
@@ -44,14 +45,14 @@ public class CursorOverlayView extends View {
                 clampCursor();
                 invalidate();
             }
-            service.onRightStickScroll(useRightStick ? 0f : scrollAxisY);
+            host.onRightStickScroll(useRightStick ? 0f : scrollAxisY);
             postOnAnimation(this);
         }
     };
 
-    public CursorOverlayView(Context context, GamepadMouseService service) {
+    public CursorOverlayView(Context context, CursorEventHost host) {
         super(context);
-        this.service = service;
+        this.host = host;
         setFocusable(true);
         setFocusableInTouchMode(true);
         setKeepScreenOn(false);
@@ -130,6 +131,11 @@ public class CursorOverlayView extends View {
             return true;
         }
         return true;
+    }
+
+    @Override
+    public boolean dispatchKeyEvent(KeyEvent event) {
+        return host.onOverlayKeyEvent(event) || super.dispatchKeyEvent(event);
     }
 
     private float readRightStickY(MotionEvent event, int source) {

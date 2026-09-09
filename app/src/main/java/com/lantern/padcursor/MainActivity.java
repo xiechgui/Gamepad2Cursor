@@ -7,6 +7,7 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.graphics.Color;
+import android.net.Uri;
 import android.os.Bundle;
 import android.os.SystemClock;
 import android.provider.Settings;
@@ -21,6 +22,8 @@ import android.widget.ScrollView;
 import android.widget.SeekBar;
 import android.widget.TextView;
 import android.widget.Toast;
+
+import rikka.shizuku.Shizuku;
 
 public class MainActivity extends Activity {
     private static volatile MainActivity instance;
@@ -47,18 +50,40 @@ public class MainActivity extends Activity {
     private TextView actionMonitor;
     private Button[] mappingButtons;
     private Button[] comboButtons;
+    private TextView backendLabel;
+    private Button accessibilityBackendButton;
+    private Button shizukuBackendButton;
+    private Button configureBackendButton;
+    private final Shizuku.OnRequestPermissionResultListener shizukuPermissionListener =
+            (requestCode, grantResult) -> {
+                if (requestCode != ShizukuBridge.PERMISSION_REQUEST) return;
+                if (grantResult == android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                    ShizukuBridge.ensureBound();
+                    Toast.makeText(this, "Shizuku 已授权，请继续配置悬浮层权限", Toast.LENGTH_LONG).show();
+                } else {
+                    Toast.makeText(this, "Shizuku 授权被拒绝", Toast.LENGTH_SHORT).show();
+                }
+                updateStatus();
+            };
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         instance = this;
         prefs = Prefs.get(this);
+        ShizukuBridge.initialize(this);
+        Shizuku.addRequestPermissionResultListener(shizukuPermissionListener);
         setContentView(buildUi());
     }
 
     @Override
     protected void onResume() {
         super.onResume();
+        if (Prefs.usesShizuku(this) && ShizukuBridge.isReady()
+                && Settings.canDrawOverlays(this)
+                && prefs.getBoolean("mouse_mode", true)) {
+            ShizukuOverlayService.start(this);
+        }
         updateStatus();
     }
 
@@ -106,38 +131,63 @@ public class MainActivity extends Activity {
         statusRow.addView(about, new LinearLayout.LayoutParams(dp(100), dp(44)));
         left.addView(statusRow);
 
-        Button accessibility = button("打开电视辅助功能设置");
-        accessibility.setOnClickListener(v -> {
-            try {
-                startActivity(new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS));
-            } catch (Exception e) {
-                Toast.makeText(this, "无法打开辅助功能设置", Toast.LENGTH_SHORT).show();
-            }
-        });
-        accessibility.setTextSize(16);
-        left.addView(accessibility, compactLp());
+        LinearLayout backendRow = mappingRow();
+        backendLabel = text("输入方案", 16, true);
+        backendLabel.setGravity(Gravity.CENTER_VERTICAL);
+        backendRow.addView(backendLabel, new LinearLayout.LayoutParams(0, dp(44), 0.72f));
+        accessibilityBackendButton = button("辅助功能");
+        accessibilityBackendButton.setTextSize(15);
+        accessibilityBackendButton.setOnClickListener(v -> selectBackend(Prefs.BACKEND_ACCESSIBILITY));
+        backendRow.addView(accessibilityBackendButton, new LinearLayout.LayoutParams(0, dp(42), 1f));
+        shizukuBackendButton = button("Shizuku");
+        shizukuBackendButton.setTextSize(15);
+        shizukuBackendButton.setOnClickListener(v -> selectBackend(Prefs.BACKEND_SHIZUKU));
+        backendRow.addView(shizukuBackendButton, new LinearLayout.LayoutParams(0, dp(42), 1f));
+        left.addView(backendRow);
+
+        configureBackendButton = button("配置当前输入方案");
+        configureBackendButton.setOnClickListener(v -> configureCurrentBackend());
+        configureBackendButton.setTextSize(16);
+        left.addView(configureBackendButton, compactLp());
 
         Button enableMouse = button("开启鼠标模式");
         enableMouse.setOnClickListener(v -> {
-            GamepadMouseService s = GamepadMouseService.getInstance();
-            if (s == null) {
-                Toast.makeText(this, "请先启用 PadCursor 辅助功能服务", Toast.LENGTH_SHORT).show();
+            if (Prefs.usesShizuku(this)) {
+                if (!ShizukuBridge.isReady() || !Settings.canDrawOverlays(this)) {
+                    Toast.makeText(this, "请先配置并授权 Shizuku 输入方案", Toast.LENGTH_SHORT).show();
+                    return;
+                }
+                prefs.edit().putBoolean("mouse_mode", true).apply();
+                ShizukuOverlayService service = ShizukuOverlayService.getInstance();
+                if (service != null) service.setMouseMode(true);
+                else ShizukuOverlayService.start(this);
             } else {
-                s.setMouseMode(true);
-                updateStatus();
+                GamepadMouseService s = GamepadMouseService.getInstance();
+                if (s == null) {
+                    Toast.makeText(this, "请先启用 PadCursor 辅助功能服务", Toast.LENGTH_SHORT).show();
+                } else {
+                    s.setMouseMode(true);
+                }
             }
+            updateStatus();
         });
         enableMouse.setTextSize(16);
 
         Button passthrough = button("切换到手柄直通（Moonlight）");
         passthrough.setOnClickListener(v -> {
-            GamepadMouseService s = GamepadMouseService.getInstance();
-            if (s == null) {
-                Toast.makeText(this, "辅助功能服务未运行", Toast.LENGTH_SHORT).show();
+            if (Prefs.usesShizuku(this)) {
+                prefs.edit().putBoolean("mouse_mode", false).apply();
+                ShizukuOverlayService service = ShizukuOverlayService.getInstance();
+                if (service != null) service.setMouseMode(false);
             } else {
-                s.setMouseMode(false);
-                updateStatus();
+                GamepadMouseService s = GamepadMouseService.getInstance();
+                if (s == null) {
+                    Toast.makeText(this, "辅助功能服务未运行", Toast.LENGTH_SHORT).show();
+                } else {
+                    s.setMouseMode(false);
+                }
             }
+            updateStatus();
         });
         passthrough.setTextSize(16);
         LinearLayout modeRow = mappingRow();
@@ -227,6 +277,8 @@ public class MainActivity extends Activity {
                     .apply();
             GamepadMouseService s = GamepadMouseService.getInstance();
             if (s != null) s.applySettings();
+            ShizukuOverlayService shizukuService = ShizukuOverlayService.getInstance();
+            if (shizukuService != null) shizukuService.applySettings();
             Toast.makeText(this, "设置已应用", Toast.LENGTH_SHORT).show();
         });
         save.setTextSize(17);
@@ -248,7 +300,7 @@ public class MainActivity extends Activity {
         right.addView(comboHeading);
         addComboRow(right, 1, "组合键 1", Prefs.comboFirst(this));
         addComboRow(right, 2, "组合键 2", Prefs.comboSecond(this));
-        TextView comboNote = text("组合键全部释放后切换，避免 Moonlight 卡键。", 14, false);
+        TextView comboNote = text("辅助功能可双向组合键切换；Shizuku 直通后需回本页开启。", 14, false);
         right.addView(comboNote);
 
         Button resetMappings = button("恢复默认按键映射");
@@ -275,16 +327,84 @@ public class MainActivity extends Activity {
                 + "B：返回    Y：主页\n"
                 + "LB / RB：向上 / 向下滚动\n"
                 + "L3：光标回到中心\n"
+                + "菜单：默认未绑定（Shizuku 方案可用）\n"
                 + "右摇杆 Y 轴：连续滚动\n"
                 + "START + SELECT：鼠标模式 / 手柄直通\n\n"
                 + "进入 Moonlight 前请切换到手柄直通模式。\n\n"
-                + "实现方式：可聚焦的辅助功能透明层接收 Android 9 手柄摇杆，"
-                + "AccessibilityService 处理按键并模拟触摸手势。";
+                + "输入方案可在辅助功能与 Shizuku 之间切换。\n"
+                + "辅助功能方案安装简单；Shizuku 方案可注入真正的菜单键，"
+                + "但 Android 9 每次重启后需要通过 ADB 重新启动 Shizuku。";
         new AlertDialog.Builder(this)
                 .setTitle("PadCursor TV v" + BuildConfig.VERSION_NAME)
                 .setMessage(message)
                 .setPositiveButton("关闭", null)
                 .show();
+    }
+
+    private void selectBackend(String backend) {
+        if (backend.equals(Prefs.inputBackend(this))) {
+            updateStatus();
+            return;
+        }
+        prefs.edit().putString("input_backend", backend).apply();
+        if (Prefs.BACKEND_SHIZUKU.equals(backend)) {
+            GamepadMouseService accessibility = GamepadMouseService.getInstance();
+            if (accessibility != null) accessibility.applyBackendSelection();
+            ShizukuBridge.ensureBound();
+            if (ShizukuBridge.isReady() && Settings.canDrawOverlays(this)
+                    && prefs.getBoolean("mouse_mode", true)) {
+                ShizukuOverlayService.start(this);
+            }
+        } else {
+            ShizukuOverlayService.stop(this);
+            GamepadMouseService accessibility = GamepadMouseService.getInstance();
+            if (accessibility != null) accessibility.applyBackendSelection();
+        }
+        updateStatus();
+    }
+
+    private void configureCurrentBackend() {
+        if (!Prefs.usesShizuku(this)) {
+            try {
+                startActivity(new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS));
+            } catch (Exception e) {
+                Toast.makeText(this, "无法打开辅助功能设置", Toast.LENGTH_SHORT).show();
+            }
+            return;
+        }
+
+        if (!ShizukuBridge.isRunning()) {
+            Intent launch = getPackageManager().getLaunchIntentForPackage("moe.shizuku.privileged.api");
+            if (launch != null) {
+                startActivity(launch);
+                Toast.makeText(this, "请先在 Shizuku 中启动服务，然后返回 PadCursor", Toast.LENGTH_LONG).show();
+            } else {
+                Toast.makeText(this, "未检测到 Shizuku，请先安装并通过 ADB 启动", Toast.LENGTH_LONG).show();
+            }
+            return;
+        }
+        if (!ShizukuBridge.hasPermission()) {
+            ShizukuBridge.requestPermission();
+            return;
+        }
+        if (!Settings.canDrawOverlays(this)) {
+            try {
+                Intent intent = new Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                        Uri.parse("package:" + getPackageName()));
+                startActivity(intent);
+            } catch (Exception e) {
+                startActivity(new Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION));
+            }
+            return;
+        }
+        ShizukuBridge.ensureBound();
+        if (ShizukuBridge.isReady()) {
+            if (prefs.getBoolean("mouse_mode", true)) ShizukuOverlayService.start(this);
+            Toast.makeText(this, "Shizuku 输入方案已就绪", Toast.LENGTH_SHORT).show();
+        } else {
+            Toast.makeText(this, "正在连接 Shizuku 输入服务，请稍候", Toast.LENGTH_SHORT).show();
+        }
+        updateStatus();
     }
 
     private void addSliderRow(LinearLayout root, TextView label, SeekBar seekBar) {
@@ -456,6 +576,7 @@ public class MainActivity extends Activity {
     }
 
     @Override protected void onDestroy() {
+        Shizuku.removeRequestPermissionResultListener(shizukuPermissionListener);
         if (instance == this) instance = null;
         captureAction = -1;
         captureCombo = 0;
@@ -463,7 +584,44 @@ public class MainActivity extends Activity {
         super.onDestroy();
     }
 
+    static void refreshStatus() {
+        MainActivity activity = instance;
+        if (activity != null) activity.runOnUiThread(activity::updateStatus);
+    }
+
     private void updateStatus() {
+        boolean shizuku = Prefs.usesShizuku(this);
+        if (backendLabel != null) {
+            backendLabel.setText("输入方案：" + (shizuku ? "Shizuku" : "辅助功能"));
+        }
+        if (accessibilityBackendButton != null) accessibilityBackendButton.setAlpha(shizuku ? 0.58f : 1f);
+        if (shizukuBackendButton != null) shizukuBackendButton.setAlpha(shizuku ? 1f : 0.58f);
+        if (configureBackendButton != null) {
+            configureBackendButton.setText(shizuku ? "配置 Shizuku 与悬浮层权限" : "打开电视辅助功能设置");
+        }
+
+        if (shizuku) {
+            String state;
+            if (!ShizukuBridge.isRunning()) {
+                state = "状态：Shizuku 未启动";
+            } else if (!ShizukuBridge.hasPermission()) {
+                state = "状态：Shizuku 等待授权";
+            } else if (!Settings.canDrawOverlays(this)) {
+                state = "状态：等待悬浮层权限";
+            } else if (!ShizukuBridge.isReady()) {
+                state = "状态：正在连接 Shizuku";
+                ShizukuBridge.ensureBound();
+            } else {
+                ShizukuOverlayService service = ShizukuOverlayService.getInstance();
+                boolean mouse = service != null ? service.isMouseMode()
+                        : prefs.getBoolean("mouse_mode", true);
+                state = mouse ? "状态：鼠标模式 ON（Shizuku）"
+                        : "状态：手柄直通 ON（Shizuku）";
+            }
+            if (statusView != null) statusView.setText(state);
+            return;
+        }
+
         boolean enabled = isAccessibilityServiceEnabled(this, GamepadMouseService.class);
         GamepadMouseService s = GamepadMouseService.getInstance();
         String state;

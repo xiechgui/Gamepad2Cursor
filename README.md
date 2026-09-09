@@ -1,4 +1,4 @@
-# PadCursor TV v0.3.6
+# PadCursor TV v0.4.0
 
 一个面向 **Android TV / Android 9（API 28）** 的轻量手柄鼠标项目。
 
@@ -19,7 +19,8 @@
 - 不需要 Google Play
 - 不需要 Root
 - 不需要“悬浮窗”权限
-- 需要开启 Android **辅助功能（Accessibility Service）**
+- 可选择 Android **辅助功能**或 **Shizuku** 输入方案
+- Shizuku 方案还需要“显示在其他应用上层”权限
 
 本项目用于电视侧载，不发布到 Google Play。构建配置只关闭了与 Google Play 上架期限有关的 `ExpiredTargetSdkVersion` 检查，其它 Android Lint 检查仍会执行。
 
@@ -49,6 +50,7 @@ Android 9 的 `AccessibilityService` 本身没有 Android 新版那种全局 `on
 | LB | 向上滚动 |
 | RB | 向下滚动 |
 | L3 / R3 | 光标居中 |
+| 未绑定 | 菜单（Shizuku 方案注入 `KEYCODE_MENU`） |
 | START + SELECT | 鼠标模式 / 手柄直通切换 |
 
 模式切换组合键也可以自定义。组合键全部释放后才切换模式，避免 Moonlight 远端收到按下却收不到松开。
@@ -65,7 +67,7 @@ Android 9 的 `AccessibilityService` 本身没有 Android 新版那种全局 `on
 
 ## 自定义按键映射
 
-设置页可重新绑定或清除以下动作：单击、长按、返回、主页、向上滚动、向下滚动、光标居中。普通动作不能占用模式切换组合键，同一个实体按键不能同时绑定多个动作。可一键恢复默认映射。
+设置页可重新绑定或清除以下动作：单击、长按、返回、主页、向上滚动、向下滚动、光标居中、菜单。菜单默认未绑定；辅助功能方案无法向其它应用注入菜单键，选择 Shizuku 方案后才会执行真正的 `KEYCODE_MENU`。普通动作不能占用模式切换组合键，同一个实体按键不能同时绑定多个动作。可一键恢复默认映射。
 
 ## v0.3.1 按键兼容性修复
 
@@ -109,6 +111,24 @@ Android 9 的 `AccessibilityService` 本身没有 Android 新版那种全局 `on
 - 鼠标模式与 Moonlight 直通按钮并排显示，按键映射行也进一步压缩。
 - 标题、版本、默认映射、使用说明和兼容性说明移入“关于”弹窗。
 - 两栏仍保留独立滚动作为低分辨率或系统超大字体下的后备方式。
+
+## v0.4.0 双输入方案与菜单键
+
+- 主界面新增“辅助功能 / Shizuku”输入方案切换，选择会保存，两个后端不会同时拦截手柄。
+- 辅助功能方案保留原有安装方式、触摸手势和按键兼容逻辑。
+- Shizuku 方案使用可聚焦的普通系统悬浮层接收手柄，通过 Shizuku UserService 的 ADB shell 身份执行输入注入。
+- 新增可自定义的“菜单”动作；在 Shizuku 方案下注入真正的 `KEYCODE_MENU`，默认未绑定以避免占用现有手柄按键。
+- Shizuku 模式需要安装并启动 Shizuku、授予 PadCursor Shizuku 权限，并允许 PadCursor 显示在其它应用上层。
+- Android 9 无 Root 时，每次电视重启后都需要通过电脑 ADB 重新启动 Shizuku。
+- Shizuku 鼠标模式下仍可用 `START + SELECT` 进入手柄直通；进入直通后悬浮层已移除，需重新打开 PadCursor 并点击“开启鼠标模式”才能返回。
+
+### Android 9 上配置 Shizuku
+
+1. 在电视安装并打开 Shizuku。
+2. 打开开发者选项和 USB 调试，将电视连接电脑。
+3. 按 Shizuku 页面显示的 ADB 命令启动服务；电视每次重启后需要重新执行。
+4. 在 PadCursor 选择“Shizuku”，点击“配置 Shizuku 与悬浮层权限”。
+5. 依次完成 Shizuku 授权和“显示在其他应用上层”授权，再开启鼠标模式。
 
 ## 编译
 
@@ -192,7 +212,7 @@ com.lantern.padcursor
 
 ## GitHub Actions 在线编译
 
-仓库已包含 `.github/workflows/build-apk.yml`。先按照 [SIGNING.md](SIGNING.md) 配置四项 GitHub Actions Secrets，再在 **Actions → Build PadCursorTV APK → Run workflow** 云端编译。成功后从运行页面底部 **Artifacts** 下载 `PadCursorTV-Android9-v0.3.6-APK`，解压后得到 `PadCursorTV-Android9-v0.3.6-release.apk`。
+仓库已包含 `.github/workflows/build-apk.yml`。先按照 [SIGNING.md](SIGNING.md) 配置四项 GitHub Actions Secrets，再在 **Actions → Build PadCursorTV APK → Run workflow** 云端编译。成功后从运行页面底部 **Artifacts** 下载 `PadCursorTV-Android9-v0.4.0-APK`，解压后得到 `PadCursorTV-Android9-v0.4.0-release.apk`。
 
 在线构建固定使用 JDK 17、Gradle 8.7、Android Gradle Plugin 8.5.2，APK 最低支持 Android 9 / API 28。
 

@@ -21,7 +21,7 @@ import java.util.ArrayDeque;
 import java.util.Queue;
 import java.util.Set;
 
-public class GamepadMouseService extends AccessibilityService {
+public class GamepadMouseService extends AccessibilityService implements CursorEventHost {
     private static volatile GamepadMouseService instance;
     private WindowManager windowManager;
     private CursorOverlayView overlay;
@@ -45,7 +45,7 @@ public class GamepadMouseService extends AccessibilityService {
         setServiceInfo(info);
         SharedPreferences p = Prefs.get(this);
         mouseMode = p.getBoolean("mouse_mode", true);
-        if (mouseMode) showOverlay();
+        if (mouseMode && !Prefs.usesShizuku(this)) showOverlay();
         toast("PadCursor 已启动；默认 START + SELECT 切换模式");
     }
 
@@ -60,6 +60,7 @@ public class GamepadMouseService extends AccessibilityService {
     }
 
     private boolean handleControllerKey(KeyEvent event) {
+        if (Prefs.usesShizuku(this)) return false;
         int code = event.getKeyCode();
         int token = Prefs.eventToken(code, event.getScanCode());
         MainActivity.reportKeyEvent(event, "ACCESSIBILITY");
@@ -160,6 +161,10 @@ public class GamepadMouseService extends AccessibilityService {
                 if (centered) overlay.centerCursor();
                 finishImmediateAction(action, centered);
                 return;
+            case 7:
+                MainActivity.reportAction(Prefs.ACTION_NAMES[action], "仅 Shizuku 方案支持");
+                mainHandler.post(this::drainActionQueue);
+                return;
             default:
                 finishImmediateAction(action, false);
         }
@@ -239,7 +244,8 @@ public class GamepadMouseService extends AccessibilityService {
         heldActionKeys.clear();
         actionQueue.clear();
         if (enabled) {
-            showOverlay();
+            if (!Prefs.usesShizuku(this)) showOverlay();
+            else hideOverlay();
             toast("鼠标模式：开");
         } else {
             hideOverlay();
@@ -248,6 +254,16 @@ public class GamepadMouseService extends AccessibilityService {
     }
 
     public boolean isMouseMode() { return mouseMode; }
+
+    public void applyBackendSelection() {
+        if (Prefs.usesShizuku(this) || !mouseMode) hideOverlay();
+        else showOverlay();
+    }
+
+    @Override public boolean onOverlayKeyEvent(KeyEvent event) {
+        // Accessibility mode filters keys in onKeyEvent(); do not process them twice.
+        return false;
+    }
 
     public void applySettings() {
         if (overlay != null) overlay.reloadSettings();
