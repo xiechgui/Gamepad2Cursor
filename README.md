@@ -1,4 +1,4 @@
-# PadCursor TV v0.3.5
+# PadCursor TV v0.3.6
 
 一个面向 **Android TV / Android 9（API 28）** 的轻量手柄鼠标项目。
 
@@ -102,6 +102,14 @@ Android 9 的 `AccessibilityService` 本身没有 Android 新版那种全局 `on
 - 返回和主页会检查系统全局动作结果，首次失败时延迟一帧重试。
 - “最近动作”现在显示按下、排队、执行成功、手势完成或手势被取消等实际状态。
 
+## v0.3.6 紧凑电视控制面板
+
+- 主界面继续使用左右双栏，但缩小留白、字号和控件高度，尽量在一屏内显示全部常用设置。
+- 六个滑块由“文字一行、滑块一行”改成标签和滑块并排，显著减少纵向占用。
+- 鼠标模式与 Moonlight 直通按钮并排显示，按键映射行也进一步压缩。
+- 标题、版本、默认映射、使用说明和兼容性说明移入“关于”弹窗。
+- 两栏仍保留独立滚动作为低分辨率或系统超大字体下的后备方式。
+
 ## 编译
 
 推荐 Android Studio：
@@ -184,7 +192,7 @@ com.lantern.padcursor
 
 ## GitHub Actions 在线编译
 
-仓库已包含 `.github/workflows/build-apk.yml`。先按照 [SIGNING.md](SIGNING.md) 配置四项 GitHub Actions Secrets，再在 **Actions → Build PadCursorTV APK → Run workflow** 云端编译。成功后从运行页面底部 **Artifacts** 下载 `PadCursorTV-Android9-v0.3.5-APK`，解压后得到 `PadCursorTV-Android9-v0.3.5-release.apk`。
+仓库已包含 `.github/workflows/build-apk.yml`。先按照 [SIGNING.md](SIGNING.md) 配置四项 GitHub Actions Secrets，再在 **Actions → Build PadCursorTV APK → Run workflow** 云端编译。成功后从运行页面底部 **Artifacts** 下载 `PadCursorTV-Android9-v0.3.6-APK`，解压后得到 `PadCursorTV-Android9-v0.3.6-release.apk`。
 
 在线构建固定使用 JDK 17、Gradle 8.7、Android Gradle Plugin 8.5.2，APK 最低支持 Android 9 / API 28。
 

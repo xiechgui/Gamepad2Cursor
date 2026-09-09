@@ -1,6 +1,7 @@
 package com.lantern.padcursor;
 
 import android.app.Activity;
+import android.app.AlertDialog;
 import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
@@ -72,7 +73,7 @@ public class MainActivity extends Activity {
         leftScroll.setFillViewport(true);
         LinearLayout left = new LinearLayout(this);
         left.setOrientation(LinearLayout.VERTICAL);
-        left.setPadding(dp(28), dp(22), dp(28), dp(32));
+        left.setPadding(dp(18), dp(14), dp(18), dp(18));
         leftScroll.addView(left, new ScrollView.LayoutParams(
                 ScrollView.LayoutParams.MATCH_PARENT,
                 ScrollView.LayoutParams.WRAP_CONTENT));
@@ -81,7 +82,7 @@ public class MainActivity extends Activity {
         rightScroll.setFillViewport(true);
         LinearLayout right = new LinearLayout(this);
         right.setOrientation(LinearLayout.VERTICAL);
-        right.setPadding(dp(28), dp(22), dp(28), dp(32));
+        right.setPadding(dp(18), dp(14), dp(18), dp(18));
         rightScroll.addView(right, new ScrollView.LayoutParams(
                 ScrollView.LayoutParams.MATCH_PARENT,
                 ScrollView.LayoutParams.WRAP_CONTENT));
@@ -95,27 +96,15 @@ public class MainActivity extends Activity {
         page.addView(rightScroll, new LinearLayout.LayoutParams(0,
                 LinearLayout.LayoutParams.MATCH_PARENT, 11f));
 
-        TextView title = text("PadCursor TV v0.3.5", 30, true);
-        left.addView(title);
-
-        statusView = text("", 20, true);
-        statusView.setPadding(0, dp(12), 0, dp(16));
-        left.addView(statusView);
-
-        TextView desc = text(
-                "Android 9 电视用手柄鼠标。\n\n" +
-                "默认映射：\n" +
-                "• 左摇杆：移动光标（可改右摇杆）\n" +
-                "• A：单击    X：长按\n" +
-                "• B：返回    Y：主页\n" +
-                "• LB / RB：向上 / 向下滚动\n" +
-                "• L3 / R3：光标回到屏幕中心\n" +
-                "• 右摇杆 Y 轴：连续滚动\n" +
-                "• START + SELECT：鼠标模式 ↔ 手柄直通模式\n\n" +
-                "进入 Moonlight 前按 START+SELECT 切到“手柄直通”，游戏即可直接收到手柄。",
-                18, false);
-        desc.setPadding(0, 0, 0, dp(18));
-        left.addView(desc);
+        LinearLayout statusRow = mappingRow();
+        statusView = text("", 18, true);
+        statusView.setGravity(Gravity.CENTER_VERTICAL);
+        statusRow.addView(statusView, new LinearLayout.LayoutParams(0, dp(46), 1f));
+        Button about = button("关于");
+        about.setTextSize(16);
+        about.setOnClickListener(v -> showAbout());
+        statusRow.addView(about, new LinearLayout.LayoutParams(dp(100), dp(44)));
+        left.addView(statusRow);
 
         Button accessibility = button("打开电视辅助功能设置");
         accessibility.setOnClickListener(v -> {
@@ -125,7 +114,8 @@ public class MainActivity extends Activity {
                 Toast.makeText(this, "无法打开辅助功能设置", Toast.LENGTH_SHORT).show();
             }
         });
-        left.addView(accessibility, lp());
+        accessibility.setTextSize(16);
+        left.addView(accessibility, compactLp());
 
         Button enableMouse = button("开启鼠标模式");
         enableMouse.setOnClickListener(v -> {
@@ -137,7 +127,7 @@ public class MainActivity extends Activity {
                 updateStatus();
             }
         });
-        left.addView(enableMouse, lp());
+        enableMouse.setTextSize(16);
 
         Button passthrough = button("切换到手柄直通（Moonlight）");
         passthrough.setOnClickListener(v -> {
@@ -149,64 +139,60 @@ public class MainActivity extends Activity {
                 updateStatus();
             }
         });
-        left.addView(passthrough, lp());
+        passthrough.setTextSize(16);
+        LinearLayout modeRow = mappingRow();
+        modeRow.addView(enableMouse, new LinearLayout.LayoutParams(0, dp(46), 1f));
+        modeRow.addView(passthrough, new LinearLayout.LayoutParams(0, dp(46), 1.35f));
+        left.addView(modeRow);
 
         rightStickCheck = new CheckBox(this);
         rightStickCheck.setText("使用右摇杆控制光标（不勾选=左摇杆）");
-        rightStickCheck.setTextSize(18);
+        rightStickCheck.setTextSize(16);
         rightStickCheck.setChecked(prefs.getBoolean("right_stick", false));
-        rightStickCheck.setPadding(0, dp(14), 0, dp(10));
+        rightStickCheck.setPadding(0, dp(3), 0, dp(3));
         left.addView(rightStickCheck);
 
         speedSeek = new SeekBar(this);
         speedSeek.setMax(1800);
         speedSeek.setProgress(Math.max(200, prefs.getInt("speed", 1050)));
-        speedLabel = text("", 18, false);
-        left.addView(speedLabel);
-        left.addView(speedSeek);
+        speedLabel = text("", 16, false);
+        addSliderRow(left, speedLabel, speedSeek);
 
         deadzoneSeek = new SeekBar(this);
         deadzoneSeek.setMax(35);
         deadzoneSeek.setProgress(prefs.getInt("deadzone", 16));
-        deadzoneLabel = text("", 18, false);
-        left.addView(deadzoneLabel);
-        left.addView(deadzoneSeek);
+        deadzoneLabel = text("", 16, false);
+        addSliderRow(left, deadzoneLabel, deadzoneSeek);
 
         sizeSeek = new SeekBar(this);
         sizeSeek.setMax(48);
         sizeSeek.setProgress(Math.max(8, prefs.getInt("cursor_size", 18)));
-        sizeLabel = text("", 18, false);
-        left.addView(sizeLabel);
-        left.addView(sizeSeek);
+        sizeLabel = text("", 16, false);
+        addSliderRow(left, sizeLabel, sizeSeek);
 
-        TextView scrollHeading = text("右摇杆连续滚动", 22, true);
-        scrollHeading.setPadding(0, dp(22), 0, dp(8));
+        TextView scrollHeading = text("右摇杆连续滚动", 19, true);
+        scrollHeading.setPadding(0, dp(6), 0, dp(2));
         left.addView(scrollHeading);
 
         scrollDeadzoneSeek = new SeekBar(this);
         scrollDeadzoneSeek.setMax(55);
         scrollDeadzoneSeek.setProgress(Math.max(5, prefs.getInt("scroll_deadzone", 22)) - 5);
-        scrollDeadzoneLabel = text("", 18, false);
-        left.addView(scrollDeadzoneLabel);
-        left.addView(scrollDeadzoneSeek);
+        scrollDeadzoneLabel = text("", 16, false);
+        addSliderRow(left, scrollDeadzoneLabel, scrollDeadzoneSeek);
 
         scrollSensitivitySeek = new SeekBar(this);
         scrollSensitivitySeek.setMax(150);
         scrollSensitivitySeek.setProgress(Math.max(50, prefs.getInt("scroll_sensitivity", 100)) - 50);
-        scrollSensitivityLabel = text("", 18, false);
-        left.addView(scrollSensitivityLabel);
-        left.addView(scrollSensitivitySeek);
+        scrollSensitivityLabel = text("", 16, false);
+        addSliderRow(left, scrollSensitivityLabel, scrollSensitivitySeek);
 
         scrollSpeedSeek = new SeekBar(this);
         scrollSpeedSeek.setMax(2200);
         scrollSpeedSeek.setProgress(Math.max(200, prefs.getInt("scroll_speed", 900)) - 200);
-        scrollSpeedLabel = text("", 18, false);
-        left.addView(scrollSpeedLabel);
-        left.addView(scrollSpeedSeek);
+        scrollSpeedLabel = text("", 16, false);
+        addSliderRow(left, scrollSpeedLabel, scrollSpeedSeek);
 
-        TextView scrollNote = text(
-                "支持常见的 RZ / RY 轴。若勾选“使用右摇杆控制光标”，为避免冲突，右摇杆滚动会自动暂停。",
-                16, false);
+        TextView scrollNote = text("使用右摇杆控制光标时，右摇杆滚动自动暂停。", 14, false);
         left.addView(scrollNote);
 
         SeekBar.OnSeekBarChangeListener labels = new SeekBar.OnSeekBarChangeListener() {
@@ -243,25 +229,26 @@ public class MainActivity extends Activity {
             if (s != null) s.applySettings();
             Toast.makeText(this, "设置已应用", Toast.LENGTH_SHORT).show();
         });
-        left.addView(save, lp());
+        save.setTextSize(17);
+        left.addView(save, compactLp());
 
-        TextView mappingHeading = text("自定义按键映射", 22, true);
-        mappingHeading.setPadding(0, 0, 0, dp(8));
+        TextView mappingHeading = text("自定义按键映射", 20, true);
+        mappingHeading.setPadding(0, 0, 0, dp(3));
         right.addView(mappingHeading);
-        inputMonitor = text("最近按键：等待输入", 16, false);
-        inputMonitor.setPadding(0, 0, 0, dp(8));
+        inputMonitor = text("最近按键：等待输入", 14, false);
+        inputMonitor.setPadding(0, 0, 0, dp(3));
         right.addView(inputMonitor);
-        actionMonitor = text("最近动作：等待输入", 16, false);
-        actionMonitor.setPadding(0, 0, 0, dp(8));
+        actionMonitor = text("最近动作：等待输入", 14, false);
+        actionMonitor.setPadding(0, 0, 0, dp(3));
         right.addView(actionMonitor);
         for (int i = 0; i < Prefs.ACTION_IDS.length; i++) addMappingRow(right, i);
 
-        TextView comboHeading = text("模式切换组合键", 22, true);
-        comboHeading.setPadding(0, dp(20), 0, dp(8));
+        TextView comboHeading = text("模式切换组合键", 19, true);
+        comboHeading.setPadding(0, dp(5), 0, dp(2));
         right.addView(comboHeading);
         addComboRow(right, 1, "组合键 1", Prefs.comboFirst(this));
         addComboRow(right, 2, "组合键 2", Prefs.comboSecond(this));
-        TextView comboNote = text("两个组合键全部释放后才切换模式，避免 Moonlight 出现按键卡住。", 16, false);
+        TextView comboNote = text("组合键全部释放后切换，避免 Moonlight 卡键。", 14, false);
         right.addView(comboNote);
 
         Button resetMappings = button("恢复默认按键映射");
@@ -274,17 +261,38 @@ public class MainActivity extends Activity {
             comboButtons[0].setText(keyName(Prefs.comboFirst(this)));
             comboButtons[1].setText(keyName(Prefs.comboSecond(this)));
         });
-        right.addView(resetMappings, lp());
-
-        TextView note = text(
-                "兼容性说明：该版本专门以 Android 9 / API 28 为最低版本。" +
-                "它使用“可聚焦的辅助功能透明层”接收手柄摇杆，再通过 Accessibility dispatchGesture 模拟触摸。" +
-                "少数电视固件可能不把摇杆 MotionEvent 发送给这种覆盖层。按键识别同时兼容 GAMEPAD、JOYSTICK 和电视固件以 KEYBOARD 来源上报的已配置键码。",
-                16, false);
-        note.setPadding(0, dp(22), 0, dp(12));
-        right.addView(note);
+        resetMappings.setTextSize(16);
+        right.addView(resetMappings, compactLp());
 
         return page;
+    }
+
+    private void showAbout() {
+        String message = "Android 9 / API 28 电视手柄鼠标\n\n"
+                + "默认映射\n"
+                + "左摇杆：移动光标（可切换右摇杆）\n"
+                + "A：单击    X：长按\n"
+                + "B：返回    Y：主页\n"
+                + "LB / RB：向上 / 向下滚动\n"
+                + "L3：光标回到中心\n"
+                + "右摇杆 Y 轴：连续滚动\n"
+                + "START + SELECT：鼠标模式 / 手柄直通\n\n"
+                + "进入 Moonlight 前请切换到手柄直通模式。\n\n"
+                + "实现方式：可聚焦的辅助功能透明层接收 Android 9 手柄摇杆，"
+                + "AccessibilityService 处理按键并模拟触摸手势。";
+        new AlertDialog.Builder(this)
+                .setTitle("PadCursor TV v" + BuildConfig.VERSION_NAME)
+                .setMessage(message)
+                .setPositiveButton("关闭", null)
+                .show();
+    }
+
+    private void addSliderRow(LinearLayout root, TextView label, SeekBar seekBar) {
+        LinearLayout row = mappingRow();
+        label.setGravity(Gravity.CENTER_VERTICAL);
+        row.addView(label, new LinearLayout.LayoutParams(0, dp(44), 1.2f));
+        row.addView(seekBar, new LinearLayout.LayoutParams(0, dp(44), 1f));
+        root.addView(row);
     }
 
     private void updateLabels() {
@@ -307,27 +315,30 @@ public class MainActivity extends Activity {
 
     private void addMappingRow(LinearLayout root, int index) {
         LinearLayout row = mappingRow();
-        row.addView(rowLabel(Prefs.ACTION_NAMES[index]), new LinearLayout.LayoutParams(0, dp(54), 1));
+        row.addView(rowLabel(Prefs.ACTION_NAMES[index]), new LinearLayout.LayoutParams(0, dp(44), 1));
         Button set = button(keyName(Prefs.actionKey(this, index)));
+        set.setTextSize(14);
         mappingButtons[index] = set;
         set.setOnClickListener(v -> beginCapture(index, 0));
-        row.addView(set, new LinearLayout.LayoutParams(0, dp(50), 1.45f));
+        row.addView(set, new LinearLayout.LayoutParams(0, dp(42), 1.45f));
         Button clear = button("清除");
+        clear.setTextSize(15);
         clear.setOnClickListener(v -> {
             prefs.edit().putInt("key_" + Prefs.ACTION_IDS[index], KeyEvent.KEYCODE_UNKNOWN).apply();
             mappingButtons[index].setText("未绑定");
         });
-        row.addView(clear, new LinearLayout.LayoutParams(dp(88), dp(50)));
+        row.addView(clear, new LinearLayout.LayoutParams(dp(72), dp(42)));
         root.addView(row);
     }
 
     private void addComboRow(LinearLayout root, int which, String label, int keyCode) {
         LinearLayout row = mappingRow();
-        row.addView(rowLabel(label), new LinearLayout.LayoutParams(0, dp(54), 1));
+        row.addView(rowLabel(label), new LinearLayout.LayoutParams(0, dp(44), 1));
         Button set = button(keyName(keyCode));
+        set.setTextSize(14);
         comboButtons[which - 1] = set;
         set.setOnClickListener(v -> beginCapture(-1, which));
-        row.addView(set, new LinearLayout.LayoutParams(0, dp(50), 1.45f));
+        row.addView(set, new LinearLayout.LayoutParams(0, dp(42), 1.45f));
         root.addView(row);
     }
 
@@ -339,7 +350,7 @@ public class MainActivity extends Activity {
     }
 
     private TextView rowLabel(String value) {
-        TextView label = text(value, 17, false);
+        TextView label = text(value, 16, false);
         label.setGravity(Gravity.CENTER_VERTICAL);
         return label;
     }
@@ -512,11 +523,10 @@ public class MainActivity extends Activity {
         return b;
     }
 
-    private LinearLayout.LayoutParams lp() {
+    private LinearLayout.LayoutParams compactLp() {
         LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT);
-        p.setMargins(0, dp(5), 0, dp(5));
+                LinearLayout.LayoutParams.MATCH_PARENT, dp(46));
+        p.setMargins(0, dp(2), 0, dp(2));
         return p;
     }
 
