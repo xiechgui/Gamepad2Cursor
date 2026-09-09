@@ -17,6 +17,8 @@ import android.view.accessibility.AccessibilityEvent;
 import android.widget.Toast;
 
 import java.util.HashSet;
+import java.util.ArrayDeque;
+import java.util.Queue;
 import java.util.Set;
 
 public class GamepadMouseService extends AccessibilityService {
@@ -25,13 +27,12 @@ public class GamepadMouseService extends AccessibilityService {
     private CursorOverlayView overlay;
     private boolean mouseMode;
     private boolean comboLatched;
-    private boolean scrollGestureRunning;
+    private boolean gestureInFlight;
     private float pendingScrollAxis;
     private long lastScrollStarted;
-    private int lastKeyToken = KeyEvent.KEYCODE_UNKNOWN;
-    private int lastKeyAction = -1;
-    private long lastKeyHandledAt;
     private final Set<Integer> downKeys = new HashSet<>();
+    private final Set<Integer> heldActionKeys = new HashSet<>();
+    private final Queue<Integer> actionQueue = new ArrayDeque<>();
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
 
     public static GamepadMouseService getInstance() { return instance; }
@@ -55,38 +56,13 @@ public class GamepadMouseService extends AccessibilityService {
     @Override public void onInterrupt() {}
 
     @Override protected boolean onKeyEvent(KeyEvent event) {
-        return handleControllerKey(event, false);
+        return handleControllerKey(event);
     }
 
-    public boolean onOverlayKeyEvent(KeyEvent event) {
-        if (!mouseMode || overlay == null) return false;
-        return handleControllerKey(event, true);
-    }
-
-    private boolean handleControllerKey(KeyEvent event, boolean fromFocusedOverlay) {
+    private boolean handleControllerKey(KeyEvent event) {
         int code = event.getKeyCode();
         int token = Prefs.eventToken(code, event.getScanCode());
-        MainActivity.reportKeyEvent(event, fromFocusedOverlay ? "OVERLAY" : "ACCESSIBILITY");
-
-        // A number of Android TV builds deliver the same physical key through
-        // both AccessibilityService and the focused accessibility overlay.
-        // Dispatching the action twice cancels long-press/scroll gestures.
-        long now = SystemClock.uptimeMillis();
-        boolean duplicate = token == lastKeyToken
-                && event.getAction() == lastKeyAction
-                && now - lastKeyHandledAt < 45;
-        lastKeyToken = token;
-        lastKeyAction = event.getAction();
-        lastKeyHandledAt = now;
-        if (duplicate) {
-            if (event.getAction() == KeyEvent.ACTION_DOWN) {
-                int duplicateAction = actionForKey(token);
-                if (duplicateAction >= 0) {
-                    MainActivity.reportAction(Prefs.ACTION_NAMES[duplicateAction], true, true);
-                }
-            }
-            return mouseMode || MainActivity.isCapturingKey();
-        }
+        MainActivity.reportKeyEvent(event, "ACCESSIBILITY");
 
         // Some Android TV firmwares report part of a controller as SOURCE_KEYBOARD.
         // Key capture therefore deliberately runs before source classification.
@@ -106,8 +82,7 @@ public class GamepadMouseService extends AccessibilityService {
 
         // Accept configured/known controller key codes even when JUUI labels
         // their source as a keyboard. Leave unrelated remote/keyboard keys alone.
-        if (!fromFocusedOverlay && !gamepadSource
-                && mappedAction < 0 && !comboKey && !legacyKey) return false;
+        if (!gamepadSource && mappedAction < 0 && !comboKey && !legacyKey) return false;
 
         if (event.getAction() == KeyEvent.ACTION_DOWN) downKeys.add(token);
         else if (event.getAction() == KeyEvent.ACTION_UP) downKeys.remove(token);
@@ -130,18 +105,16 @@ public class GamepadMouseService extends AccessibilityService {
             return true;
         }
 
-        if (event.getAction() == KeyEvent.ACTION_DOWN && event.getRepeatCount() == 0) {
-            if (mappedAction >= 0) {
-                final int actionToRun = mappedAction;
-                // Run after the key-filter callback returns. This avoids vendor
-                // InputDispatcher implementations rejecting a global action or
-                // injected gesture while the original key is still dispatching.
-                mainHandler.post(() -> {
-                    boolean accepted = performMappedAction(actionToRun);
-                    MainActivity.reportAction(Prefs.ACTION_NAMES[actionToRun], accepted, false);
-                });
+        if (mappedAction >= 0) {
+            if (event.getAction() == KeyEvent.ACTION_DOWN) {
+                heldActionKeys.add(token);
+                MainActivity.reportAction(Prefs.ACTION_NAMES[mappedAction], "按下，等待松开");
+            } else if (event.getAction() == KeyEvent.ACTION_UP) {
+                heldActionKeys.remove(token);
+                queueMappedAction(mappedAction);
             }
-            else performLegacyFallback(code);
+        } else if (event.getAction() == KeyEvent.ACTION_DOWN && event.getRepeatCount() == 0) {
+            performLegacyFallback(code);
         }
         return true;
     }
@@ -154,19 +127,56 @@ public class GamepadMouseService extends AccessibilityService {
         return -1;
     }
 
-    private boolean performMappedAction(int action) {
+    private void queueMappedAction(int action) {
+        actionQueue.offer(action);
+        MainActivity.reportAction(Prefs.ACTION_NAMES[action], "已排队");
+        mainHandler.post(this::drainActionQueue);
+    }
+
+    private void drainActionQueue() {
+        if (!mouseMode || gestureInFlight || actionQueue.isEmpty()) return;
+        int action = actionQueue.poll();
         switch (action) {
-            case 0: return tapAtCursor(55);
-            case 1: return tapAtCursor(650);
-            case 2: return performGlobalAction(GLOBAL_ACTION_BACK);
-            case 3: return performGlobalAction(GLOBAL_ACTION_HOME);
-            case 4: return scrollAtCursor(false);
-            case 5: return scrollAtCursor(true);
+            case 0:
+                dispatchTap(action, 55);
+                return;
+            case 1:
+                dispatchTap(action, 700);
+                return;
+            case 2:
+                dispatchGlobalAction(action, GLOBAL_ACTION_BACK);
+                return;
+            case 3:
+                dispatchGlobalAction(action, GLOBAL_ACTION_HOME);
+                return;
+            case 4:
+                dispatchScroll(action, false);
+                return;
+            case 5:
+                dispatchScroll(action, true);
+                return;
             case 6:
-                if (overlay == null) return false;
-                overlay.centerCursor();
-                return true;
-            default: return false;
+                boolean centered = overlay != null;
+                if (centered) overlay.centerCursor();
+                finishImmediateAction(action, centered);
+                return;
+            default:
+                finishImmediateAction(action, false);
+        }
+    }
+
+    private void finishImmediateAction(int action, boolean accepted) {
+        MainActivity.reportAction(Prefs.ACTION_NAMES[action], accepted ? "执行成功" : "执行失败");
+        mainHandler.post(this::drainActionQueue);
+    }
+
+    private void dispatchGlobalAction(int mappedAction, int globalAction) {
+        boolean accepted = performGlobalAction(globalAction);
+        if (accepted) {
+            finishImmediateAction(mappedAction, true);
+        } else {
+            mainHandler.postDelayed(() -> finishImmediateAction(
+                    mappedAction, performGlobalAction(globalAction)), 32);
         }
     }
 
@@ -174,7 +184,7 @@ public class GamepadMouseService extends AccessibilityService {
         switch (code) {
             case KeyEvent.KEYCODE_ENTER:
             case KeyEvent.KEYCODE_DPAD_CENTER:
-                tapAtCursor(55);
+                queueMappedAction(0);
                 break;
             case KeyEvent.KEYCODE_BACK:
                 performGlobalAction(GLOBAL_ACTION_BACK);
@@ -225,7 +235,9 @@ public class GamepadMouseService extends AccessibilityService {
         mouseMode = enabled;
         Prefs.get(this).edit().putBoolean("mouse_mode", enabled).apply();
         pendingScrollAxis = 0f;
-        scrollGestureRunning = false;
+        gestureInFlight = false;
+        heldActionKeys.clear();
+        actionQueue.clear();
         if (enabled) {
             showOverlay();
             toast("鼠标模式：开");
@@ -243,14 +255,15 @@ public class GamepadMouseService extends AccessibilityService {
 
     public void onRightStickScroll(float rawAxis) {
         pendingScrollAxis = rawAxis;
-        if (!mouseMode || overlay == null || scrollGestureRunning) return;
+        if (!mouseMode || overlay == null || gestureInFlight
+                || !heldActionKeys.isEmpty() || !actionQueue.isEmpty()) return;
         float value = applyScrollCurve(rawAxis);
         if (value == 0f) return;
         long now = SystemClock.uptimeMillis();
         if (now - lastScrollStarted < 50) return;
         float delta = -Prefs.scrollSpeed(this) * value * 0.05f;
         if (Math.abs(delta) < 10f) delta = Math.copySign(10f, delta);
-        startScrollGesture(delta);
+        dispatchContinuousScroll(delta);
         lastScrollStarted = now;
     }
 
@@ -263,7 +276,7 @@ public class GamepadMouseService extends AccessibilityService {
         return Math.copySign(curved, value);
     }
 
-    private void startScrollGesture(float deltaY) {
+    private void dispatchContinuousScroll(float deltaY) {
         if (overlay == null) return;
         float x = overlay.getCursorX();
         float startY = Math.max(100f, Math.min(overlay.getHeight() - 100f, overlay.getCursorY()));
@@ -273,18 +286,7 @@ public class GamepadMouseService extends AccessibilityService {
         path.lineTo(x, endY);
         GestureDescription gesture = new GestureDescription.Builder()
                 .addStroke(new GestureDescription.StrokeDescription(path, 0, 45)).build();
-        scrollGestureRunning = true;
-        boolean accepted = dispatchGesture(gesture, new GestureResultCallback() {
-            @Override public void onCompleted(GestureDescription gestureDescription) {
-                scrollGestureRunning = false;
-                onRightStickScroll(pendingScrollAxis);
-            }
-
-            @Override public void onCancelled(GestureDescription gestureDescription) {
-                scrollGestureRunning = false;
-            }
-        }, null);
-        if (!accepted) scrollGestureRunning = false;
+        dispatchExclusiveGesture(-1, gesture);
     }
 
     private void showOverlay() {
@@ -321,17 +323,23 @@ public class GamepadMouseService extends AccessibilityService {
         overlay = null;
     }
 
-    private boolean tapAtCursor(long durationMs) {
-        if (overlay == null) return false;
+    private void dispatchTap(int action, long durationMs) {
+        if (overlay == null) {
+            finishImmediateAction(action, false);
+            return;
+        }
         Path path = new Path();
         path.moveTo(overlay.getCursorX(), overlay.getCursorY());
         GestureDescription gesture = new GestureDescription.Builder()
                 .addStroke(new GestureDescription.StrokeDescription(path, 0, durationMs)).build();
-        return dispatchGesture(gesture, null, null);
+        dispatchExclusiveGesture(action, gesture);
     }
 
-    private boolean scrollAtCursor(boolean down) {
-        if (overlay == null) return false;
+    private void dispatchScroll(int action, boolean down) {
+        if (overlay == null) {
+            finishImmediateAction(action, false);
+            return;
+        }
         float x = overlay.getCursorX();
         float y = overlay.getCursorY();
         float distance = Math.max(180f, overlay.getHeight() * 0.28f);
@@ -344,7 +352,38 @@ public class GamepadMouseService extends AccessibilityService {
         path.lineTo(x, endY);
         GestureDescription gesture = new GestureDescription.Builder()
                 .addStroke(new GestureDescription.StrokeDescription(path, 0, 280)).build();
-        return dispatchGesture(gesture, null, null);
+        dispatchExclusiveGesture(action, gesture);
+    }
+
+    private void dispatchExclusiveGesture(int action, GestureDescription gesture) {
+        if (gestureInFlight) {
+            if (action >= 0) actionQueue.offer(action);
+            return;
+        }
+        gestureInFlight = true;
+        boolean accepted = dispatchGesture(gesture, new GestureResultCallback() {
+            @Override public void onCompleted(GestureDescription gestureDescription) {
+                finishGesture(action, true);
+            }
+
+            @Override public void onCancelled(GestureDescription gestureDescription) {
+                finishGesture(action, false);
+            }
+        }, null);
+        if (!accepted) finishGesture(action, false);
+    }
+
+    private void finishGesture(int action, boolean completed) {
+        gestureInFlight = false;
+        if (action >= 0) {
+            MainActivity.reportAction(Prefs.ACTION_NAMES[action],
+                    completed ? "手势完成" : "手势被取消");
+        }
+        if (!actionQueue.isEmpty()) {
+            mainHandler.post(this::drainActionQueue);
+        } else if (heldActionKeys.isEmpty()) {
+            mainHandler.post(() -> onRightStickScroll(pendingScrollAxis));
+        }
     }
 
     private void toast(String text) {

@@ -95,7 +95,7 @@ public class MainActivity extends Activity {
         page.addView(rightScroll, new LinearLayout.LayoutParams(0,
                 LinearLayout.LayoutParams.MATCH_PARENT, 11f));
 
-        TextView title = text("PadCursor TV v0.3.4", 30, true);
+        TextView title = text("PadCursor TV v0.3.5", 30, true);
         left.addView(title);
 
         statusView = text("", 20, true);
@@ -400,13 +400,12 @@ public class MainActivity extends Activity {
         });
     }
 
-    static void reportAction(String action, boolean accepted, boolean duplicate) {
+    static void reportAction(String action, String result) {
         MainActivity activity = instance;
         if (activity == null) return;
         activity.runOnUiThread(() -> {
             if (activity.actionMonitor != null) {
-                activity.actionMonitor.setText("最近动作：" + action
-                        + (duplicate ? "（重复事件已忽略）" : accepted ? "（已提交）" : "（执行失败）"));
+                activity.actionMonitor.setText("最近动作：" + action + "（" + result + "）");
             }
         });
     }
